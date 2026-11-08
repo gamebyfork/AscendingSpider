@@ -1,0 +1,11 @@
+# Файлы сборки .NET
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userprefs
+
+# Файлы конфигурации ОС
+.DS_Store
+Thumbs.db

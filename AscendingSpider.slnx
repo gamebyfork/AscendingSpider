@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AscendingSpider.Domain/AscendingSpider.Domain.csproj" />
+    <Project Path="src/AscendingSpider.Solver/AscendingSpider.Solver.csproj" />
+    <Project Path="src/AscendingSpider/AscendingSpider.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AscendingSpider.Tests/AscendingSpider.Tests.csproj" />
+  </Folder>
+</Solution>
