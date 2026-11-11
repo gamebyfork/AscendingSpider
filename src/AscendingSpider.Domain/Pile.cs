@@ -40,6 +40,12 @@ public class Pile
         return card;
     }
 
+    public void Clear()
+    {
+        _cards.Clear();
+        _faceDownCount = 0;
+    }
+
     private void AutoFlip()
     {
         if (_faceDownCount > 0 && _faceDownCount == _cards.Count)

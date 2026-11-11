@@ -112,21 +112,27 @@ public class UISelector
 
     public void Draw(SpriteBatch sb, Texture2D pixel, SpriteFont font, MouseState mouse, bool isDarkTheme)
     {
+        Draw(sb, pixel, font, mouse,
+            isDarkTheme ? new Color(40, 40, 55) : new Color(30, 60, 30),
+            isDarkTheme ? new Color(100, 150, 220) : new Color(60, 180, 100));
+    }
+
+    public void Draw(SpriteBatch sb, Texture2D pixel, SpriteFont font, MouseState mouse, Color panelColor, Color accentColor)
+    {
         string label = Localization.Get(LabelKey);
         sb.DrawString(font, label, new Vector2(Rect.X, Rect.Y - 45), Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
 
-        Color bgColor = isDarkTheme ? new Color(40, 40, 55) : new Color(30, 60, 30);
-        sb.Draw(pixel, Rect, bgColor);
+        sb.Draw(pixel, Rect, panelColor);
         DrawBorder(sb, pixel, Rect, Color.White, 2);
 
         bool hoverL = _leftArrowRect.Contains(mouse.Position);
         bool hoverR = _rightArrowRect.Contains(mouse.Position);
-        
+
         var arrowSize = font.MeasureString("<") * 0.25f;
         float arrowY = Rect.Y + (Rect.Height - arrowSize.Y) / 2 - 2;
-        
-        sb.DrawString(font, "<", new Vector2(_leftArrowRect.X + 15, arrowY), hoverL ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
-        sb.DrawString(font, ">", new Vector2(_rightArrowRect.X + 15, arrowY), hoverR ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
+
+        sb.DrawString(font, "<", new Vector2(_leftArrowRect.X + 15, arrowY), hoverL ? accentColor : Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
+        sb.DrawString(font, ">", new Vector2(_rightArrowRect.X + 15, arrowY), hoverR ? accentColor : Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
 
         string textKey = OptionKeys[SelectedIndex];
         string text = Localization.Get(textKey) == textKey ? textKey : Localization.Get(textKey);
@@ -179,16 +185,21 @@ public class UISlider
 
     public void Draw(SpriteBatch sb, Texture2D pixel, SpriteFont font, bool isDarkTheme)
     {
+        Draw(sb, pixel, font,
+            isDarkTheme ? new Color(40, 40, 55) : new Color(30, 60, 30),
+            isDarkTheme ? new Color(100, 150, 220) : new Color(60, 180, 100));
+    }
+
+    public void Draw(SpriteBatch sb, Texture2D pixel, SpriteFont font, Color panelColor, Color accentColor)
+    {
         string label = Localization.Get(LabelKey);
         sb.DrawString(font, $"{label}: {(int)(Value * 100)}%", new Vector2(Rect.X, Rect.Y - 45), Color.White, 0f, Vector2.Zero, 0.25f, SpriteEffects.None, 0f);
 
-        Color bgColor = isDarkTheme ? new Color(40, 40, 55) : new Color(30, 60, 30);
-        sb.Draw(pixel, Rect, bgColor);
+        sb.Draw(pixel, Rect, panelColor);
         DrawBorder(sb, pixel, Rect, Color.White, 2);
 
-        Color fillColor = isDarkTheme ? new Color(100, 150, 220) : new Color(60, 180, 100);
         int fillWidth = (int)(Rect.Width * Value);
-        sb.Draw(pixel, new Rectangle(Rect.X, Rect.Y, fillWidth, Rect.Height), fillColor);
+        sb.Draw(pixel, new Rectangle(Rect.X, Rect.Y, fillWidth, Rect.Height), accentColor);
 
         int handleX = Rect.X + fillWidth - 5;
         sb.Draw(pixel, new Rectangle(handleX, Rect.Y - 5, 10, Rect.Height + 10), Color.White);

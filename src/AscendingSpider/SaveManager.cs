@@ -13,6 +13,9 @@ public class SaveSettings
     public float Volume { get; set; } = 0.5f;
     public int Theme { get; set; } = 0;
     public int CardBack { get; set; } = 0;
+    // Remember the most recently selected ruleset for the next new game.
+    // Existing settings.json files deserialize this as Classic (0).
+    public int LastRuleset { get; set; } = 0;
     
     public int Wins { get; set; } = 0;
     public int Losses { get; set; } = 0;
@@ -69,7 +72,7 @@ public static class SaveManager
 
     public static bool HasSave() => File.Exists(ProgressPath);
 
-    public static void Save(GameState state, int faceDownPerColumn)
+    public static void Save(GameState state, int faceDownPerColumn, bool mixedSuitPlacementUsed = false)
     {
         if (!Directory.Exists(SaveDir)) Directory.CreateDirectory(SaveDir);
 
@@ -77,10 +80,15 @@ public static class SaveManager
         {
             SuitCount = state.SuitCount,
             Mode = (int)state.Mode,
+            Ruleset = (int)state.Ruleset,
             EndlessLoops = state.EndlessLoops,
             DealsMade = state.DealsMade,
             FaceDownPerColumn = faceDownPerColumn,
             CompletedSequences = state.CompletedSequences,
+            TotalCompletedSequences = state.TotalCompletedSequences,
+            CompletedSequenceSuits = state.CompletedSequenceSuits.Select(suit => (int)suit).ToList(),
+            NextCardId = state.NextCardId,
+            MixedSuitPlacementUsed = mixedSuitPlacementUsed,
             Stock = state.Stock.Select(c => new CardDto { Suit = (int)c.Suit, Rank = (int)c.Rank, Id = c.Id }).ToList(),
             Tableau = state.Tableau.Select(p => 
             {
@@ -98,7 +106,7 @@ public static class SaveManager
         File.WriteAllText(ProgressPath, json);
     }
 
-    public static (GameState, int)? Load()
+    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed)? Load()
     {
         if (!HasSave()) return null;
 
@@ -108,24 +116,58 @@ public static class SaveManager
             var data = JsonSerializer.Deserialize<SaveData>(json);
             if (data == null) return null;
 
-            var state = new GameState(data.SuitCount, (GameMode)data.Mode);
+            var savedRuleset = Enum.IsDefined(typeof(SpiderRuleset), data.Ruleset)
+                ? (SpiderRuleset)data.Ruleset
+                : SpiderRuleset.Classic;
+            var state = new GameState(data.SuitCount, (GameMode)data.Mode, savedRuleset);
             state.CompletedSequences = data.CompletedSequences;
+            // Restore the actual suits of completed piles. Older save files did not
+            // store this information, so retain the former Spades placeholder for
+            // those already-completed piles only.
+            foreach (int suitValue in (data.CompletedSequenceSuits ?? new List<int>()).Take(Math.Max(0, data.CompletedSequences)))
+            {
+                if (Enum.IsDefined(typeof(Suit), suitValue))
+                    state.CompletedSequenceSuits.Add((Suit)suitValue);
+                else
+                    state.CompletedSequenceSuits.Add(Suit.Spades);
+            }
+            while (state.CompletedSequenceSuits.Count < Math.Max(0, data.CompletedSequences))
+                state.CompletedSequenceSuits.Add(Suit.Spades);
             state.EndlessLoops = data.EndlessLoops;
             state.DealsMade = data.DealsMade;
-            
-            foreach (var c in data.Stock)
+            state.FaceDownPerColumn = data.FaceDownPerColumn > 0 ? data.FaceDownPerColumn : 5;
+
+            foreach (var c in data.Stock ?? new List<CardDto>())
                 state.Stock.Add(new Card((Suit)c.Suit, (Rank)c.Rank, c.Id));
 
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < Math.Min(10, data.Tableau?.Count ?? 0); i++)
             {
-                foreach (var c in data.Tableau[i])
+                foreach (var c in data.Tableau[i] ?? new List<CardDto>())
                 {
                     var card = new Card((Suit)c.Suit, (Rank)c.Rank, c.Id);
                     if (c.IsFaceDown) state.Tableau[i].AddFaceDown(card);
                     else state.Tableau[i].AddFaceUp(card);
                 }
             }
-            return (state, data.FaceDownPerColumn);
+
+            // Old save files do not contain these fields. Reconstruct safe defaults
+            // from the counters and currently active card identifiers.
+            state.TotalCompletedSequences = data.TotalCompletedSequences > 0
+                ? data.TotalCompletedSequences
+                : data.EndlessLoops * 8 + data.CompletedSequences;
+            int maxActiveCardId = state.Stock.Select(c => c.Id)
+                .Concat(state.Tableau.SelectMany(p => p.Cards).Select(c => c.Id))
+                .DefaultIfEmpty(0)
+                .Max();
+            state.NextCardId = data.NextCardId > maxActiveCardId
+                ? data.NextCardId
+                : maxActiveCardId + 1;
+
+            // Если это сохранение создано до появления трекера, мы не можем
+            // восстановить историю перемещений. Консервативно запрещаем достижение
+            // в этой старой партии, чтобы его нельзя было получить нечестно.
+            bool mixedSuitPlacementUsed = data.MixedSuitPlacementUsed ?? true;
+            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed);
         }
         catch { return null; }
     }
@@ -156,10 +198,17 @@ public class SaveData
 {
     public int SuitCount { get; set; }
     public int Mode { get; set; }
+    // Old save files omit this field and therefore remain Classic.
+    public int Ruleset { get; set; } = 0;
     public int EndlessLoops { get; set; }
     public int DealsMade { get; set; }
     public int FaceDownPerColumn { get; set; }
     public int CompletedSequences { get; set; }
+    public int TotalCompletedSequences { get; set; }
+    public List<int>? CompletedSequenceSuits { get; set; }
+    public int NextCardId { get; set; }
+    // Nullable for backward compatibility: null means an older save without history.
+    public bool? MixedSuitPlacementUsed { get; set; }
     public List<CardDto> Stock { get; set; } = new();
     public List<List<CardDto>> Tableau { get; set; } = new();
 }

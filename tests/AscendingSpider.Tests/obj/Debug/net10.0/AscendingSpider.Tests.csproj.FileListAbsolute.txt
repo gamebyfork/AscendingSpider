@@ -94,6 +94,7 @@ C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\AscendingSpider.Tests.AssemblyInfoInputs.cache
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\AscendingSpider.Tests.AssemblyInfo.cs
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\AscendingSpider.Tests.csproj.CoreCompileInputs.cache
+C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\AscendingSpider.Tests.sourcelink.json
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\Ascendin.7DB42A5F.Up2Date
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\AscendingSpider.Tests.dll
 C:\Users\naybe\Desktop\AscendingSpider\tests\AscendingSpider.Tests\obj\Debug\net10.0\refint\AscendingSpider.Tests.dll

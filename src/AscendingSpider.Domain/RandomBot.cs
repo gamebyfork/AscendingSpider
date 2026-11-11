@@ -10,11 +10,15 @@ public static class RandomBot
 
         while (!state.IsWon && moves < maxMoves)
         {
-            var options = GameEngine.EnumerateMoves(state).ToList();
+            if (!GameEngine.HasAnyMoves(state))
+                return new Result(false, moves, state.CompletedSequences, Stuck: true);
 
-            bool takeStock = options.Count == 0 
-                ? state.Stock.Count >= 10 
-                : (state.Stock.Count >= 10 && rng.NextDouble() < 0.2);
+            var options = GameEngine.EnumerateMoves(state).ToList();
+            bool canDeal = GameEngine.CanDealFromStock(state);
+
+            bool takeStock = options.Count == 0
+                ? canDeal
+                : (canDeal && rng.NextDouble() < 0.2);
 
             if (takeStock)
             {
@@ -29,7 +33,7 @@ public static class RandomBot
 
             moves++;
 
-            if (!GameEngine.HasAnyMoves(state) && state.Stock.Count < 10)
+            if (!GameEngine.HasAnyMoves(state))
                 return new Result(false, moves, state.CompletedSequences, Stuck: true);
         }
 

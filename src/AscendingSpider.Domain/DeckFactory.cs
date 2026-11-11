@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AscendingSpider.Domain;
 
 public static class DeckFactory
 {
-    public static List<Card> CreateDeck(int suitCount)
+    public static List<Card> CreateDeck(int suitCount, int firstCardId = 1)
     {
         var sets = suitCount switch
         {
@@ -17,15 +18,16 @@ public static class DeckFactory
         };
 
         var deck = new List<Card>(104);
-        int nextId = 1;
+        int nextId = firstCardId;
 
         for (int s = 0; s < 4; s++)
         {
             var suit = (Suit)s;
             for (int set = 0; set < sets[s]; set++)
                 for (int rank = 1; rank <= 13; rank++)
-                    deck.Add(new Card(suit, (Rank)rank, nextId++)); 
+                    deck.Add(new Card(suit, (Rank)rank, nextId++));
         }
+
         return deck;
     }
 
@@ -38,30 +40,48 @@ public static class DeckFactory
         }
     }
 
-    public static GameState Deal(int suitCount, int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard)
+    public static GameState Deal(int suitCount, int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic)
     {
-        var deck = CreateDeck(suitCount);
+        var state = new GameState(suitCount, mode, ruleset)
+        {
+            FaceDownPerColumn = faceDownPerColumn
+        };
+
+        DealFreshRound(state, rng);
+        return state;
+    }
+
+    /// <summary>
+    /// Deals a fresh 104-card round into an existing state. Used by Endless mode
+    /// after all eight sequences from the previous round have been collected.
+    /// </summary>
+    public static void DealFreshRound(GameState state, Random rng)
+    {
+        var deck = CreateDeck(state.SuitCount, state.NextCardId);
         Shuffle(deck, rng);
+        state.NextCardId = checked(state.NextCardId + deck.Count);
 
-        var state = new GameState(suitCount, mode);
+        foreach (var pile in state.Tableau)
+            pile.Clear();
+        state.Stock.Clear();
+
         int index = 0;
-
         for (int col = 0; col < 10; col++)
         {
             int cardCount = col < 4 ? 6 : 5;
-            int faceDown = Math.Min(faceDownPerColumn, cardCount - 1);
+            int faceDown = Math.Min(state.FaceDownPerColumn, cardCount - 1);
 
             for (int i = 0; i < cardCount; i++)
             {
                 var card = deck[index++];
-                if (i < faceDown) state.Tableau[col].AddFaceDown(card);
-                else state.Tableau[col].AddFaceUp(card);
+                if (i < faceDown)
+                    state.Tableau[col].AddFaceDown(card);
+                else
+                    state.Tableau[col].AddFaceUp(card);
             }
         }
 
         for (int i = index; i < deck.Count; i++)
             state.Stock.Add(deck[i]);
-
-        return state;
     }
 }

@@ -1,0 +1,9 @@
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\bin\Release\net10.0\AscendingSpider.Domain.deps.json
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\bin\Release\net10.0\AscendingSpider.Domain.dll
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\AscendingSpider.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\AscendingSpider.Domain.AssemblyInfoInputs.cache
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\AscendingSpider.Domain.AssemblyInfo.cs
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\AscendingSpider.Domain.csproj.CoreCompileInputs.cache
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\AscendingSpider.Domain.dll
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\refint\AscendingSpider.Domain.dll
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Domain\obj\Release\net10.0\ref\AscendingSpider.Domain.dll

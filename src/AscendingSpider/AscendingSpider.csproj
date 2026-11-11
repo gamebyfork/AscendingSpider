@@ -2,27 +2,43 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Release identity: keep all executable version fields in sync. -->
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <InformationalVersion>0.2.0</InformationalVersion>
+    <Product>Ascending Spider</Product>
+    <Title>Ascending Spider</Title>
+    <Description>Spider solitaire game built with MonoGame.</Description>
+
+    <ApplicationIcon>Icon.ico</ApplicationIcon>
     <RollForward>Major</RollForward>
     <PublishReadyToRun>false</PublishReadyToRun>
     <TieredCompilation>false</TieredCompilation>
-  </PropertyGroup>
-  <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Icon.ico</ApplicationIcon>
   </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="Content\**" />
     <EmbeddedResource Remove="Content\**" />
     <None Remove="Content\**" />
+
+    <!-- DesktopGL reads this exact manifest resource name when creating the SDL window. -->
+    <None Remove="Icon.bmp" />
+    <EmbeddedResource Include="Icon.bmp" LogicalName="$(AssemblyName).Icon.bmp" />
   </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.6.1" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.6.1" />
   </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\AscendingSpider.Domain\AscendingSpider.Domain.csproj" />
     <ProjectReference Include="..\AscendingSpider.Solver\AscendingSpider.Solver.csproj" />
   </ItemGroup>
+
   <ItemGroup>
     <MonoGameContentReference Include="Content\Content.mgcb" />
   </ItemGroup>

@@ -1,10 +1,9 @@
 ﻿using System;
 using System.IO;
-using AscendingSpider;
 
 try
 {
-    using var game = new Game1();
+    using var game = new global::AscendingSpider.Game1();
     game.Run();
 }
 catch (Exception ex)

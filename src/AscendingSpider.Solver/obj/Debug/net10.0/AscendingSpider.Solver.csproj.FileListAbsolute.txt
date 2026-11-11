@@ -8,6 +8,7 @@ C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net1
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\AscendingSpider.Solver.AssemblyInfoInputs.cache
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\AscendingSpider.Solver.AssemblyInfo.cs
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\AscendingSpider.Solver.csproj.CoreCompileInputs.cache
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\AscendingSpider.Solver.sourcelink.json
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\Ascendin.CDA8A871.Up2Date
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\AscendingSpider.Solver.dll
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Debug\net10.0\refint\AscendingSpider.Solver.dll
