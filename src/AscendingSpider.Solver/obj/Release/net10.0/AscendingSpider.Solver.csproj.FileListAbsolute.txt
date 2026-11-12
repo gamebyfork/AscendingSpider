@@ -10,3 +10,7 @@ C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\ne
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\net10.0\AscendingSpider.Solver.dll
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\net10.0\refint\AscendingSpider.Solver.dll
 C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\net10.0\ref\AscendingSpider.Solver.dll
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\bin\Release\net10.0\AscendingSpider.Solver.pdb
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\bin\Release\net10.0\AscendingSpider.Domain.pdb
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\net10.0\AscendingSpider.Solver.sourcelink.json
+C:\Users\naybe\Desktop\AscendingSpider\src\AscendingSpider.Solver\obj\Release\net10.0\AscendingSpider.Solver.pdb

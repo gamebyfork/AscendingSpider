@@ -13,9 +13,6 @@ public class SaveSettings
     public float Volume { get; set; } = 0.5f;
     public int Theme { get; set; } = 0;
     public int CardBack { get; set; } = 0;
-    // Remember the most recently selected ruleset for the next new game.
-    // Existing settings.json files deserialize this as Classic (0).
-    public int LastRuleset { get; set; } = 0;
     
     public int Wins { get; set; } = 0;
     public int Losses { get; set; } = 0;
@@ -72,7 +69,11 @@ public static class SaveManager
 
     public static bool HasSave() => File.Exists(ProgressPath);
 
-    public static void Save(GameState state, int faceDownPerColumn, bool mixedSuitPlacementUsed = false)
+    public static void Save(
+        GameState state,
+        int faceDownPerColumn,
+        bool mixedSuitPlacementUsed = false,
+        double? currentGameTime = null)
     {
         if (!Directory.Exists(SaveDir)) Directory.CreateDirectory(SaveDir);
 
@@ -80,7 +81,6 @@ public static class SaveManager
         {
             SuitCount = state.SuitCount,
             Mode = (int)state.Mode,
-            Ruleset = (int)state.Ruleset,
             EndlessLoops = state.EndlessLoops,
             DealsMade = state.DealsMade,
             FaceDownPerColumn = faceDownPerColumn,
@@ -89,6 +89,7 @@ public static class SaveManager
             CompletedSequenceSuits = state.CompletedSequenceSuits.Select(suit => (int)suit).ToList(),
             NextCardId = state.NextCardId,
             MixedSuitPlacementUsed = mixedSuitPlacementUsed,
+            CurrentGameTime = currentGameTime,
             Stock = state.Stock.Select(c => new CardDto { Suit = (int)c.Suit, Rank = (int)c.Rank, Id = c.Id }).ToList(),
             Tableau = state.Tableau.Select(p => 
             {
@@ -106,7 +107,7 @@ public static class SaveManager
         File.WriteAllText(ProgressPath, json);
     }
 
-    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed)? Load()
+    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed, double? CurrentGameTime)? Load()
     {
         if (!HasSave()) return null;
 
@@ -116,10 +117,7 @@ public static class SaveManager
             var data = JsonSerializer.Deserialize<SaveData>(json);
             if (data == null) return null;
 
-            var savedRuleset = Enum.IsDefined(typeof(SpiderRuleset), data.Ruleset)
-                ? (SpiderRuleset)data.Ruleset
-                : SpiderRuleset.Classic;
-            var state = new GameState(data.SuitCount, (GameMode)data.Mode, savedRuleset);
+            var state = new GameState(data.SuitCount, (GameMode)data.Mode);
             state.CompletedSequences = data.CompletedSequences;
             // Restore the actual suits of completed piles. Older save files did not
             // store this information, so retain the former Spades placeholder for
@@ -167,7 +165,7 @@ public static class SaveManager
             // восстановить историю перемещений. Консервативно запрещаем достижение
             // в этой старой партии, чтобы его нельзя было получить нечестно.
             bool mixedSuitPlacementUsed = data.MixedSuitPlacementUsed ?? true;
-            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed);
+            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed, data.CurrentGameTime);
         }
         catch { return null; }
     }
@@ -198,8 +196,6 @@ public class SaveData
 {
     public int SuitCount { get; set; }
     public int Mode { get; set; }
-    // Old save files omit this field and therefore remain Classic.
-    public int Ruleset { get; set; } = 0;
     public int EndlessLoops { get; set; }
     public int DealsMade { get; set; }
     public int FaceDownPerColumn { get; set; }
@@ -209,6 +205,8 @@ public class SaveData
     public int NextCardId { get; set; }
     // Nullable for backward compatibility: null means an older save without history.
     public bool? MixedSuitPlacementUsed { get; set; }
+    // Nullable for backward compatibility with saves created before Blitz timer persistence.
+    public double? CurrentGameTime { get; set; }
     public List<CardDto> Stock { get; set; } = new();
     public List<List<CardDto>> Tableau { get; set; } = new();
 }

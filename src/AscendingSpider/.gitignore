@@ -9,3 +9,6 @@
 # Файлы конфигурации ОС
 .DS_Store
 Thumbs.db
+
+# Build and release artifacts
+artifacts/

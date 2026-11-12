@@ -6,31 +6,31 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "AscendingSpider.Solver/1.0.0": {
+      "AscendingSpider.Solver/0.2.0": {
         "dependencies": {
-          "AscendingSpider.Domain": "1.0.0"
+          "AscendingSpider.Domain": "0.2.0"
         },
         "runtime": {
           "AscendingSpider.Solver.dll": {}
         }
       },
-      "AscendingSpider.Domain/1.0.0": {
+      "AscendingSpider.Domain/0.2.0": {
         "runtime": {
           "AscendingSpider.Domain.dll": {
-            "assemblyVersion": "1.0.0.0",
-            "fileVersion": "1.0.0.0"
+            "assemblyVersion": "0.2.0.0",
+            "fileVersion": "0.2.0.0"
           }
         }
       }
     }
   },
   "libraries": {
-    "AscendingSpider.Solver/1.0.0": {
+    "AscendingSpider.Solver/0.2.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "AscendingSpider.Domain/1.0.0": {
+    "AscendingSpider.Domain/0.2.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
