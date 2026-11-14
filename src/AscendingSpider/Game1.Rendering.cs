@@ -565,15 +565,14 @@ public partial class Game1
         
         for (int col = 0; col < 10; col++) {
             var pile = _gameState.Tableau[col]; int slotX = 50 + col * (CardWidth + CardSpacing); int slotY = TableauTopY;
-            if (pile.IsEmpty)
-            {
-                var slotRect = new Rectangle(slotX, slotY, CardWidth, CardHeight);
-                // Keep an unmistakable but restrained placeholder visible in
-                // every empty tableau column, matching the card corner radius.
-                _spriteBatch.Draw(_hintMask, slotRect, hudPalette.CardBack * 0.18f);
-                _spriteBatch.Draw(_borderBlack2, slotRect, hudPalette.Accent * 0.62f);
-                _spriteBatch.Draw(_pixel, new Rectangle(slotX + 13, slotY + 13, CardWidth - 26, 1), hudPalette.Accent * 0.22f);
-            }
+
+            // Draw the rounded column slot before the cards in every column.
+            // Cards are rendered afterwards, so the placeholder remains beneath
+            // occupied piles and is visible as soon as a column becomes empty.
+            // Keep the slot clean: no inner horizontal stripe.
+            var slotRect = new Rectangle(slotX, slotY, CardWidth, CardHeight);
+            _spriteBatch.Draw(_hintMask, slotRect, hudPalette.CardBack * 0.12f);
+            _spriteBatch.Draw(_borderBlack2, slotRect, hudPalette.Accent * 0.48f);
             
             int dragEndIndex = _isDragging && col == _dragFromColumn ? GameRules.GetSequenceEnd(pile, _dragFromIndex) : -1;
 
