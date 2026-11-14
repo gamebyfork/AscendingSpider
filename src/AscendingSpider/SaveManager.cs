@@ -80,6 +80,7 @@ public static class SaveManager
         var data = new SaveData
         {
             SuitCount = state.SuitCount,
+            SelectedSuit = (int)state.SelectedSuit,
             Mode = (int)state.Mode,
             EndlessLoops = state.EndlessLoops,
             DealsMade = state.DealsMade,
@@ -117,32 +118,34 @@ public static class SaveManager
             var data = JsonSerializer.Deserialize<SaveData>(json);
             if (data == null) return null;
 
-            var state = new GameState(data.SuitCount, (GameMode)data.Mode);
+            Suit selectedSuit = Enum.IsDefined(typeof(Suit), data.SelectedSuit ?? (int)Suit.Spades)
+                ? (Suit)(data.SelectedSuit ?? (int)Suit.Spades)
+                : Suit.Spades;
+            var state = new GameState(1, (GameMode)data.Mode, selectedSuit: selectedSuit);
             state.CompletedSequences = data.CompletedSequences;
-            // Restore the actual suits of completed piles. Older save files did not
-            // store this information, so retain the former Spades placeholder for
-            // those already-completed piles only.
-            foreach (int suitValue in (data.CompletedSequenceSuits ?? new List<int>()).Take(Math.Max(0, data.CompletedSequences)))
-            {
-                if (Enum.IsDefined(typeof(Suit), suitValue))
-                    state.CompletedSequenceSuits.Add((Suit)suitValue);
-                else
-                    state.CompletedSequenceSuits.Add(Suit.Spades);
-            }
-            while (state.CompletedSequenceSuits.Count < Math.Max(0, data.CompletedSequences))
-                state.CompletedSequenceSuits.Add(Suit.Spades);
+            // Preserve the selected single suit for completed sequences.
+            for (int i = 0; i < Math.Max(0, data.CompletedSequences); i++)
+                state.CompletedSequenceSuits.Add(selectedSuit);
             state.EndlessLoops = data.EndlessLoops;
             state.DealsMade = data.DealsMade;
-            state.FaceDownPerColumn = data.FaceDownPerColumn > 0 ? data.FaceDownPerColumn : 5;
+            state.FaceDownPerColumn = data.FaceDownPerColumn switch
+            {
+                2 => 2, // previous two-suit Easy
+                3 => 2, // previous one-suit Easy
+                4 => 5, // previous two-suit Hard
+                5 => 3, // previous one-suit Medium
+                7 => 5, // previous one-suit Hard
+                _ => 3
+            };
 
             foreach (var c in data.Stock ?? new List<CardDto>())
-                state.Stock.Add(new Card((Suit)c.Suit, (Rank)c.Rank, c.Id));
+                state.Stock.Add(new Card(selectedSuit, (Rank)c.Rank, c.Id));
 
             for (int i = 0; i < Math.Min(10, data.Tableau?.Count ?? 0); i++)
             {
                 foreach (var c in data.Tableau[i] ?? new List<CardDto>())
                 {
-                    var card = new Card((Suit)c.Suit, (Rank)c.Rank, c.Id);
+                    var card = new Card(selectedSuit, (Rank)c.Rank, c.Id);
                     if (c.IsFaceDown) state.Tableau[i].AddFaceDown(card);
                     else state.Tableau[i].AddFaceUp(card);
                 }
@@ -195,6 +198,7 @@ public static class SaveManager
 public class SaveData
 {
     public int SuitCount { get; set; }
+    public int? SelectedSuit { get; set; }
     public int Mode { get; set; }
     public int EndlessLoops { get; set; }
     public int DealsMade { get; set; }

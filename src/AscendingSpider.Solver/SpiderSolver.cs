@@ -56,7 +56,8 @@ public sealed class SpiderSolver
         string Hash,
         int Depth,
         int Heuristic,
-        PathLink? Path);
+        PathLink? Path,
+        int MoveBonus = 0);
 
     private sealed record HintNode(
         GameState State,
@@ -119,16 +120,18 @@ public sealed class SpiderSolver
     }
 
     /// <summary>
-    /// Weighted best-first search with canonical state hashing and transposition
-    /// handling. Useful moves are expanded first; whole-pile relocations between
-    /// empty columns are omitted because they only permute interchangeable piles.
-    /// maxMilliseconds bounds interactive verification; reaching it returns Unknown.
+    /// Hybrid solver: a bounded diverse beam pass searches for a complete path
+    /// quickly, then weighted best-first search continues over the full reachable
+    /// graph. Beam pruning never proves a deal impossible. Whole-pile relocations
+    /// between empty columns are omitted because canonical hashing makes them
+    /// equivalent to the unchanged position. Reaching a budget returns Unknown.
     /// </summary>
     public SolverSearchResult SolveDetailed(
         GameState initialState,
         int maxStatesToCheck = 50_000,
         CancellationToken cancellationToken = default,
-        int maxMilliseconds = 0)
+        int maxMilliseconds = 0,
+        bool allowStockDeals = true)
     {
         ArgumentNullException.ThrowIfNull(initialState);
 
@@ -159,6 +162,32 @@ public sealed class SpiderSolver
 
         int statesChecked = 0;
         int bestHeuristic = initialHeuristic;
+
+        // A bounded, diverse beam pass is used as a fast solution finder before
+        // the complete best-first search. It explores several promising lines
+        // in parallel instead of committing the whole budget to one greedy path.
+        // Beam pruning is never used to claim Unsolvable: if it finds no win,
+        // the complete search below still runs on the full legal move graph.
+        int beamStateBudget = Math.Min(200_000, maxStatesToCheck / 5);
+        int beamTimeBudget = maxMilliseconds > 0
+            ? Math.Max(1, maxMilliseconds / 3)
+            : 0;
+
+        if (beamStateBudget >= 1_000)
+        {
+            SolverSearchResult? beamResult = TryBeamSearch(
+                initial,
+                beamStateBudget,
+                beamTimeBudget,
+                allowStockDeals,
+                cancellationToken,
+                stopwatch,
+                ref statesChecked,
+                ref bestHeuristic);
+
+            if (beamResult.HasValue)
+                return beamResult.Value;
+        }
 
         try
         {
@@ -229,7 +258,7 @@ public sealed class SpiderSolver
                     EnqueueIfBetter(next, item.Move, current, nextDepth, item.Bonus);
                 }
 
-                if (GameEngine.CanDealFromStock(current.State))
+                if (allowStockDeals && GameEngine.CanDealFromStock(current.State))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (maxMilliseconds > 0 && stopwatch.ElapsedMilliseconds >= maxMilliseconds)
@@ -281,15 +310,166 @@ public sealed class SpiderSolver
             bestHeuristic = Math.Min(bestHeuristic, heuristic);
 
             var path = new PathLink(parent.Path, move, depth);
-            var node = new Node(next, hash, depth, heuristic, path);
+            var node = new Node(next, hash, depth, heuristic, path, moveBonus);
             open.Enqueue(node, MakePriority(heuristic, depth, moveBonus, order++));
         }
     }
 
+    private static SolverSearchResult? TryBeamSearch(
+        GameState initial,
+        int stateBudget,
+        int timeBudgetMilliseconds,
+        bool allowStockDeals,
+        CancellationToken cancellationToken,
+        Stopwatch stopwatch,
+        ref int statesChecked,
+        ref int bestHeuristic)
+    {
+        int beamWidth = initial.SuitCount >= 2 ? 1_600 : 900;
+        int startingStatesChecked = statesChecked;
+        long order = 0;
+
+        string initialHash = StateHash.GetHash(initial);
+        int initialHeuristic = StateHeuristic.Calculate(initial);
+        var frontier = new List<Node>
+        {
+            new(initial.Clone(), initialHash, 0, initialHeuristic, null)
+        };
+        var visited = new HashSet<string>(StringComparer.Ordinal) { initialHash };
+
+        while (frontier.Count > 0
+            && statesChecked - startingStatesChecked < stateBudget)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return null;
+            if (timeBudgetMilliseconds > 0
+                && stopwatch.ElapsedMilliseconds >= timeBudgetMilliseconds)
+                return null;
+
+            var nextByHash = new Dictionary<string, Node>(StringComparer.Ordinal);
+
+            foreach (Node current in frontier)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    return null;
+                if (timeBudgetMilliseconds > 0
+                    && stopwatch.ElapsedMilliseconds >= timeBudgetMilliseconds)
+                    return null;
+                if (statesChecked - startingStatesChecked >= stateBudget)
+                    break;
+
+                statesChecked++;
+                bestHeuristic = Math.Min(bestHeuristic, current.Heuristic);
+
+                if (current.State.IsWon)
+                {
+                    return new SolverSearchResult(
+                        SolvabilityStatus.Solvable,
+                        ReconstructPath(current.Path),
+                        statesChecked,
+                        bestHeuristic);
+                }
+
+                int nextDepth = current.Depth + 1;
+
+                foreach (Move move in GameEngine.EnumerateProgressMoves(current.State))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                        return null;
+                    if (timeBudgetMilliseconds > 0
+                        && stopwatch.ElapsedMilliseconds >= timeBudgetMilliseconds)
+                        return null;
+
+                    GameState next = current.State.Clone();
+                    if (!GameEngine.TryMove(next, move.FromColumn, move.FromIndex, move.ToColumn))
+                        continue;
+
+                    string hash = StateHash.GetHash(next);
+                    if (!visited.Add(hash))
+                        continue;
+
+                    int heuristic = StateHeuristic.Calculate(next);
+                    bestHeuristic = Math.Min(bestHeuristic, heuristic);
+                    int bonus = StateHeuristic.GetMoveOrderBonus(current.State, move);
+                    var path = new PathLink(current.Path, move, nextDepth);
+                    var candidate = new Node(next, hash, nextDepth, heuristic, path, bonus);
+
+                    if (next.IsWon)
+                    {
+                        return new SolverSearchResult(
+                            SolvabilityStatus.Solvable,
+                            ReconstructPath(path),
+                            statesChecked,
+                            bestHeuristic);
+                    }
+
+                    if (!nextByHash.TryGetValue(hash, out Node? existing)
+                        || GetBeamPriority(candidate) < GetBeamPriority(existing))
+                    {
+                        nextByHash[hash] = candidate;
+                    }
+                }
+
+                if (allowStockDeals && GameEngine.CanDealFromStock(current.State))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                        return null;
+                    if (timeBudgetMilliseconds > 0
+                        && stopwatch.ElapsedMilliseconds >= timeBudgetMilliseconds)
+                        return null;
+
+                    GameState next = current.State.Clone();
+                    if (GameEngine.TryDealFromStock(next))
+                    {
+                        string hash = StateHash.GetHash(next);
+                        if (visited.Add(hash))
+                        {
+                            int heuristic = StateHeuristic.Calculate(next);
+                            bestHeuristic = Math.Min(bestHeuristic, heuristic);
+                            Move dealMove = new(-1, -1, -1);
+                            int bonus = StateHeuristic.GetMoveOrderBonus(current.State, dealMove);
+                            var path = new PathLink(current.Path, dealMove, nextDepth);
+                            var candidate = new Node(next, hash, nextDepth, heuristic, path, bonus);
+
+                            if (next.IsWon)
+                            {
+                                return new SolverSearchResult(
+                                    SolvabilityStatus.Solvable,
+                                    ReconstructPath(path),
+                                    statesChecked,
+                                    bestHeuristic);
+                            }
+
+                            if (!nextByHash.TryGetValue(hash, out Node? existing)
+                                || GetBeamPriority(candidate) < GetBeamPriority(existing))
+                            {
+                                nextByHash[hash] = candidate;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (nextByHash.Count == 0)
+                break;
+
+            frontier = nextByHash.Values
+                .OrderBy(GetBeamPriority)
+                .ThenBy(node => node.Heuristic)
+                .Take(beamWidth)
+                .ToList();
+        }
+
+        return null;
+    }
+
+    private static int GetBeamPriority(Node node)
+        => node.Heuristic * 4 + node.Depth * 3 - node.MoveBonus * 2;
+
     /// <summary>
-    /// In Standard and Blitz, returns only the first move from a complete
-    /// winning path found by SolveDetailed. In Endless, where IsWon is never
-    /// true, uses the bounded progress-oriented heuristic.
+    /// Returns the first action from a fully found winning path. Stock deals
+    /// are included in the search, so a hint can correctly recommend a tableau
+    /// move or the next stock deal. Endless uses its non-terminal heuristic.
     /// </summary>
     /// <summary>
     /// Immediate hint evaluation for the UI. It examines each legal next move
@@ -298,6 +478,61 @@ public sealed class SpiderSolver
     /// effectively immediate while preferring reveals, completed runs, empty
     /// columns, and new same-suit links over neutral card shuffling.
     /// </summary>
+    /// <summary>
+    /// Returns a hint only when the first move belongs to a fully proven
+    /// winning continuation. The search includes both tableau moves and legal
+    /// stock deals, as required by standard Spider rules. An inconclusive search
+    /// never claims that the position is unsolvable.
+    /// </summary>
+    public HintSearchResult FindWinningHintOrStock(
+        GameState state,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.IsWon || cancellationToken.IsCancellationRequested)
+            return NoHint(0);
+
+        int stateBudget = state.SuitCount switch
+        {
+            1 => 600_000,
+            2 => 1_500_000,
+            _ => 300_000
+        };
+
+        int timeBudgetMs = state.SuitCount switch
+        {
+            1 => 20_000,
+            2 => 30_000,
+            _ => 15_000
+        };
+
+        // Stock deals are part of the legal move graph in standard Spider.
+        // Omitting them would search a restricted subproblem rather than the game.
+        SolverSearchResult proof = SolveDetailed(
+            state,
+            stateBudget,
+            cancellationToken,
+            timeBudgetMs,
+            allowStockDeals: true);
+
+        if (proof.Status == SolvabilityStatus.Solvable
+            && proof.Solution.Count > 0)
+        {
+            return new HintSearchResult(
+                true,
+                proof.Solution[0],
+                StateHeuristic.Calculate(state),
+                proof.StatesChecked);
+        }
+
+        // The search already includes stock deals. If it returns Unknown, the
+        // budget was exhausted; if it returns Unsolvable, all legal continuations
+        // (including stock deals) were exhausted. Neither case justifies an
+        // arbitrary stock recommendation.
+        return NoHint(proof.StatesChecked);
+    }
+
     public HintSearchResult FindBestHintInstant(GameState state, Move? previousHint = null)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -445,9 +680,9 @@ public sealed class SpiderSolver
 
         int verificationBudget = state.SuitCount switch
         {
-            1 => 500_000,
-            2 => 300_000,
-            _ => 180_000
+            1 => 800_000,
+            2 => 1_200_000,
+            _ => 300_000
         };
 
         // FindBestHint is called on a worker thread. These are maximum search
@@ -455,8 +690,8 @@ public sealed class SpiderSolver
         // A hint is returned only when SolveDetailed proves a complete path.
         int timeBudgetMs = state.SuitCount switch
         {
-            1 => 8_000,
-            2 => 12_000,
+            1 => 15_000,
+            2 => 25_000,
             _ => 15_000
         };
 
@@ -923,7 +1158,10 @@ public sealed class SpiderSolver
         int moveBonus,
         long order)
     {
-        int priority = heuristic * 3 + depth * 5 - moveBonus * 3;
+        // Keep progress heuristics important, but charge for long detours so
+        // the queue does not endlessly prefer a locally attractive shuffle.
+        // Move-order bonuses break ties without overwhelming the state score.
+        int priority = heuristic * 3 + depth * 14 - moveBonus * 2;
         return (priority, heuristic, depth, order);
     }
 

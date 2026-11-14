@@ -4,8 +4,8 @@ using AscendingSpider.Domain;
 namespace AscendingSpider.Solver;
 
 /// <summary>
-/// Lower values represent positions closer to a completed Spider game.
-/// This is an ordering heuristic, not a proof of solvability.
+/// Lower values represent positions closer to a completed standard Spider game.
+/// This is a search-ordering heuristic, not a proof of solvability.
 /// </summary>
 public static class StateHeuristic
 {
@@ -35,11 +35,13 @@ public static class StateHeuristic
             int currentSameSuitRun = 1;
             int longestSameSuitRun = 1;
 
+            // Cards are stored bottom-to-top. AscendingSpider runs are
+            // Ace, Two, Three, ... King as the index increases.
             for (int i = visibleStart; i < cards.Count - 1; i++)
             {
                 Card lower = cards[i];
                 Card upper = cards[i + 1];
-                bool rankContinues = (int)upper.Rank == (int)lower.Rank + 1;
+                bool rankContinues = GameRules.CanPlaceOn(upper, lower);
                 bool sameSuit = lower.Suit == upper.Suit;
 
                 if (rankContinues && sameSuit)
@@ -60,6 +62,7 @@ public static class StateHeuristic
             score -= Math.Max(0, longestSameSuitRun - topRunLength) * 5;
         }
 
+        // Empty columns are valuable workspaces, but their value diminishes.
         score -= emptyColumns switch
         {
             0 => 0,
@@ -73,16 +76,11 @@ public static class StateHeuristic
         return Math.Max(0, score);
     }
 
-    /// <summary>
-    /// Counts visible adjacent pairs that form a descending same-suit run.
-    /// A pure 10-to-9 transfer from one such pair to another has zero net gain,
-    /// so the hint system can recognise it as a shuffle rather than progress.
-    /// </summary>
     public static int CountSameSuitLinks(GameState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        int links = 0;
 
+        int links = 0;
         foreach (Pile pile in state.Tableau)
         {
             int start = Math.Clamp(pile.FaceDownCount, 0, pile.Count);
@@ -90,24 +88,19 @@ public static class StateHeuristic
             {
                 Card lower = pile.Cards[i];
                 Card upper = pile.Cards[i + 1];
-                if (lower.Suit == upper.Suit
-                    && (int)upper.Rank == (int)lower.Rank + 1)
-                {
+                if (lower.Suit == upper.Suit && GameRules.CanPlaceOn(upper, lower))
                     links++;
-                }
             }
         }
 
         return links;
     }
 
-    /// <summary>
-    /// Immediate move-order preference. Large bonuses are reserved for
-    /// irreversible progress; rank-compatible same-suit merges are useful but
-    /// should not outrank revealing a hidden card or freeing a column.
-    /// </summary>
+    /// <summary>Larger values mean the move is more promising to expand first.</summary>
     public static int GetMoveOrderBonus(GameState state, Move move)
     {
+        ArgumentNullException.ThrowIfNull(state);
+
         if (move.FromColumn < 0)
             return -18;
 
@@ -141,8 +134,6 @@ public static class StateHeuristic
 
         if (target.IsEmpty)
         {
-            // Empty columns are useful temporary workspace, but this bonus is
-            // intentionally modest so empty-column shuffling is not overvalued.
             bonus += 12;
         }
         else if (target.TopCard.Suit == movingCard.Suit)
@@ -151,16 +142,16 @@ public static class StateHeuristic
         }
         else
         {
-            // Mixed-suit stacks are legal, but harder to move as a single run.
             bonus -= 65;
         }
 
-        // Splitting an existing same-suit sequence requires a concrete payoff.
+        // Do not split a clean same-suit ascending run without a useful payoff.
         if (!revealsHidden && move.FromIndex > source.FaceDownCount)
         {
             Card below = source.Cards[move.FromIndex - 1];
             bool breaksSameSuitRun = below.Suit == movingCard.Suit
-                && (int)movingCard.Rank == (int)below.Rank + 1;
+                && GameRules.CanPlaceOn(movingCard, below);
+
             if (breaksSameSuitRun)
                 bonus -= 75;
         }
@@ -178,15 +169,11 @@ public static class StateHeuristic
         {
             Card lower = pile.Cards[i - 1];
             Card upper = pile.Cards[i];
-            if (lower.Suit == upper.Suit
-                && (int)upper.Rank == (int)lower.Rank + 1)
-            {
+
+            if (lower.Suit == upper.Suit && GameRules.CanPlaceOn(upper, lower))
                 length++;
-            }
             else
-            {
                 break;
-            }
         }
 
         return length;

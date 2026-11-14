@@ -13,6 +13,11 @@
         <Start>32</Start>
         <End>127</End>
       </CharacterRegion>
+      <!-- Bullet separator used in the main-menu statistics -->
+      <CharacterRegion>
+        <Start>8226</Start>
+        <End>8226</End>
+      </CharacterRegion>
       <!-- Символы мастей: ♠ ♡ ♢ ♣ ♤ ♥ ♦ ♧ -->
       <CharacterRegion>
         <Start>9824</Start>

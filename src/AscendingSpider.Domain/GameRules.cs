@@ -1,61 +1,85 @@
 namespace AscendingSpider.Domain;
+
+/// <summary>
+/// Rules for AscendingSpider. Cards are stored bottom-to-top in a
+/// pile, so a complete run is Ace, Two, Three, ... King.
+/// </summary>
 public static class GameRules
 {
+    /// <summary>Returns true when the moving card can be placed on the target.</summary>
     public static bool CanPlaceOn(Card movingCard, Card targetCard)
         => (int)movingCard.Rank == (int)targetCard.Rank + 1;
 
     /// <summary>
-    /// Проверяет, можно ли взять карту (и всё, что над ней).
-    /// Карту можно взять только если она является верхней ИЛИ частью валидной последовательности, доходящей до самого верха колонки.
+    /// A card and the cards above it can be picked up together only when they
+    /// form an ascending run. In Classic mode the run must also be one suit.
     /// </summary>
-    public static bool CanPickUp(Pile pile, int startIndex, SpiderRuleset ruleset = SpiderRuleset.Classic)
+    public static bool CanPickUp(
+        Pile pile,
+        int startIndex,
+        SpiderRuleset ruleset = SpiderRuleset.Classic)
     {
-        if (startIndex < 0 || startIndex >= pile.Count) return false;
-        if (startIndex < pile.FaceDownCount) return false;
-        
-        // Проверяем, что последовательность от startIndex до конца колонки валидна
+        if (startIndex < 0 || startIndex >= pile.Count)
+            return false;
+
+        if (startIndex < pile.FaceDownCount)
+            return false;
+
         return GetSequenceEnd(pile, startIndex, ruleset) == pile.Count - 1;
     }
 
-    /// <summary>Возвращает индекс последней карты в валидной последовательности, начиная с startIndex.</summary>
-    public static int GetSequenceEnd(Pile pile, int startIndex, SpiderRuleset ruleset = SpiderRuleset.Classic)
+    /// <summary>
+    /// Returns the final index of a valid ascending run beginning at
+    /// <paramref name="startIndex"/>. Pile indices increase from bottom to top.
+    /// </summary>
+    public static int GetSequenceEnd(
+        Pile pile,
+        int startIndex,
+        SpiderRuleset ruleset = SpiderRuleset.Classic)
     {
-        if (startIndex < 0 || startIndex >= pile.Count) return startIndex;
-        
+        if (startIndex < 0 || startIndex >= pile.Count)
+            return startIndex;
+
         var cards = pile.Cards;
         int endIndex = startIndex;
-        
+
         while (endIndex < cards.Count - 1)
         {
-            var current = cards[endIndex];
-            var next = cards[endIndex + 1];
-            
-            bool descendingRank = (int)next.Rank == (int)current.Rank + 1;
+            Card current = cards[endIndex];
+            Card next = cards[endIndex + 1];
+
+            bool ascendingRank = (int)next.Rank == (int)current.Rank + 1;
             bool suitAllowed = ruleset == SpiderRuleset.Relaxed || current.Suit == next.Suit;
 
-            if (descendingRank && suitAllowed)
-                endIndex++;
-            else
+            if (!ascendingRank || !suitAllowed)
                 break;
+
+            endIndex++;
         }
-        
+
         return endIndex;
     }
 
+    /// <summary>
+    /// A completed AscendingSpider sequence is Ace through King, all in one suit,
+    /// occupying the top thirteen cards of a tableau column.
+    /// </summary>
     public static bool HasCompleteSequence(Pile pile)
     {
-        if (pile.Count < 13) return false;
-        
+        if (pile.Count < 13)
+            return false;
+
         var cards = pile.Cards;
         int start = cards.Count - 13;
-        var suit = cards[start].Suit;
-        
+        Suit suit = cards[start].Suit;
+
         for (int i = 0; i < 13; i++)
         {
-            if (cards[start + i].Suit != suit) return false;
-            if ((int)cards[start + i].Rank != i + 1) return false;
+            Card card = cards[start + i];
+            if (card.Suit != suit || (int)card.Rank != i + 1)
+                return false;
         }
-        
+
         return true;
     }
 }

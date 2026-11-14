@@ -18,6 +18,7 @@ public class GameState
     public List<Suit> CompletedSequenceSuits { get; } = new();
     
     public int SuitCount { get; init; }
+    public Suit SelectedSuit { get; }
     
     // Keeps card identities unique when Endless mode creates another deck.
     public int NextCardId { get; set; } = 1;
@@ -34,9 +35,11 @@ public class GameState
     public bool IsBlitzTimerActive { get; set; } = false;
     public int BlitzTimeLeftSeconds { get; set; } = 0;
     
-    public GameState(int suitCount, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic)
+    public GameState(int suitCount, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic, Suit selectedSuit = Suit.Spades)
     {
-        SuitCount = suitCount;
+        // One suit is used per game; the player chooses which suit.
+        SuitCount = 1;
+        SelectedSuit = Enum.IsDefined(typeof(Suit), selectedSuit) ? selectedSuit : Suit.Spades;
         Mode = mode;
         Ruleset = Enum.IsDefined(typeof(SpiderRuleset), ruleset) ? ruleset : SpiderRuleset.Classic;
         
@@ -48,7 +51,7 @@ public class GameState
     
     public GameState Clone()
     {
-        var copy = new GameState(SuitCount, Mode, Ruleset)
+        var copy = new GameState(SuitCount, Mode, Ruleset, SelectedSuit)
         {
             CompletedSequences = CompletedSequences,
             TotalCompletedSequences = TotalCompletedSequences,

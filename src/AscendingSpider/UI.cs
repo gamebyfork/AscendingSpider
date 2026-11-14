@@ -49,7 +49,6 @@ public class UIButton
         sb.Draw(pixel, face, color);
         sb.Draw(pixel, new Rectangle(face.X + 2, face.Y + 2, face.Width - 4, 2), Color.White * (hover ? 0.20f : 0.10f));
         DrawBorder(sb, pixel, face, edge, 2);
-        sb.Draw(pixel, new Rectangle(face.X, face.Y + 8, 3, face.Height - 16), edge * (hover ? 0.95f : 0.65f));
 
         string text = Localization.Get(TextKey);
         SpriteFont currentFont = IsEnabled ? font : italicFont;

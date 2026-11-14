@@ -6,26 +6,19 @@ namespace AscendingSpider.Domain;
 
 public static class DeckFactory
 {
-    public static List<Card> CreateDeck(int suitCount, int firstCardId = 1)
+    public static List<Card> CreateDeck(int suitCount, int firstCardId = 1, Suit selectedSuit = Suit.Spades)
     {
-        var sets = suitCount switch
-        {
-            1 => new[] { 8, 0, 0, 0 },
-            2 => new[] { 4, 4, 0, 0 },
-            3 => new[] { 3, 3, 2, 0 },
-            4 => new[] { 2, 2, 2, 2 },
-            _ => throw new ArgumentOutOfRangeException(nameof(suitCount))
-        };
-
+        // Each game uses exactly one suit, selected in the New Game menu.
+        // Keep suitCount in the signature for compatibility with existing callers.
         var deck = new List<Card>(104);
         int nextId = firstCardId;
 
-        for (int s = 0; s < 4; s++)
+        if (!Enum.IsDefined(typeof(Suit), selectedSuit)) selectedSuit = Suit.Spades;
+
+        for (int set = 0; set < 8; set++)
         {
-            var suit = (Suit)s;
-            for (int set = 0; set < sets[s]; set++)
-                for (int rank = 1; rank <= 13; rank++)
-                    deck.Add(new Card(suit, (Rank)rank, nextId++));
+            for (int rank = 1; rank <= 13; rank++)
+                deck.Add(new Card(selectedSuit, (Rank)rank, nextId++));
         }
 
         return deck;
@@ -40,9 +33,9 @@ public static class DeckFactory
         }
     }
 
-    public static GameState Deal(int suitCount, int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic)
+    public static GameState Deal(int suitCount, int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic, Suit selectedSuit = Suit.Spades)
     {
-        var state = new GameState(suitCount, mode, ruleset)
+        var state = new GameState(suitCount, mode, ruleset, selectedSuit)
         {
             FaceDownPerColumn = faceDownPerColumn
         };
@@ -57,7 +50,7 @@ public static class DeckFactory
     /// </summary>
     public static void DealFreshRound(GameState state, Random rng)
     {
-        var deck = CreateDeck(state.SuitCount, state.NextCardId);
+        var deck = CreateDeck(state.SuitCount, state.NextCardId, state.SelectedSuit);
         Shuffle(deck, rng);
         state.NextCardId = checked(state.NextCardId + deck.Count);
 
