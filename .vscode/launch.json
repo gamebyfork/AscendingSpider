@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Ascending Spider (Release)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-release",
+            "program": "${workspaceFolder}/src/AscendingSpider/bin/Release/net10.0/AscendingSpider.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AscendingSpider",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}

@@ -1,0 +1,46 @@
+# .NET build output (applies at every directory level, including MonoGame Content/bin and Content/obj)
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code: keep the shared F5 build/launch configuration; ignore local editor settings.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Test and coverage output
+[Tt]est[Rr]esult*/
+[Bb]enchmarkDotNet.Artifacts/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# NuGet packages created locally
+[Pp]ackages/
+*.nupkg
+*.snupkg
+
+# Publish and release output
+publish/
+artifacts/
+
+# Runtime logs and crash dumps
+error_log.txt
+*.dmp
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor temporary files
+*.swp
+*.swo
+*~

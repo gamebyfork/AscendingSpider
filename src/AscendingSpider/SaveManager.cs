@@ -13,9 +13,6 @@ public class SaveSettings
     public float Volume { get; set; } = 0.5f;
     public int Theme { get; set; } = 0;
     public int CardBack { get; set; } = 0;
-    // Remember the most recently selected ruleset for the next new game.
-    // Existing settings.json files deserialize this as Classic (0).
-    public int LastRuleset { get; set; } = 0;
     
     public int Wins { get; set; } = 0;
     public int Losses { get; set; } = 0;
@@ -72,15 +69,19 @@ public static class SaveManager
 
     public static bool HasSave() => File.Exists(ProgressPath);
 
-    public static void Save(GameState state, int faceDownPerColumn, bool mixedSuitPlacementUsed = false)
+    public static void Save(
+        GameState state,
+        int faceDownPerColumn,
+        bool mixedSuitPlacementUsed = false,
+        double? currentGameTime = null)
     {
         if (!Directory.Exists(SaveDir)) Directory.CreateDirectory(SaveDir);
 
         var data = new SaveData
         {
             SuitCount = state.SuitCount,
+            SelectedSuit = (int)state.SelectedSuit,
             Mode = (int)state.Mode,
-            Ruleset = (int)state.Ruleset,
             EndlessLoops = state.EndlessLoops,
             DealsMade = state.DealsMade,
             FaceDownPerColumn = faceDownPerColumn,
@@ -89,6 +90,7 @@ public static class SaveManager
             CompletedSequenceSuits = state.CompletedSequenceSuits.Select(suit => (int)suit).ToList(),
             NextCardId = state.NextCardId,
             MixedSuitPlacementUsed = mixedSuitPlacementUsed,
+            CurrentGameTime = currentGameTime,
             Stock = state.Stock.Select(c => new CardDto { Suit = (int)c.Suit, Rank = (int)c.Rank, Id = c.Id }).ToList(),
             Tableau = state.Tableau.Select(p => 
             {
@@ -106,7 +108,7 @@ public static class SaveManager
         File.WriteAllText(ProgressPath, json);
     }
 
-    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed)? Load()
+    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed, double? CurrentGameTime)? Load()
     {
         if (!HasSave()) return null;
 
@@ -116,35 +118,34 @@ public static class SaveManager
             var data = JsonSerializer.Deserialize<SaveData>(json);
             if (data == null) return null;
 
-            var savedRuleset = Enum.IsDefined(typeof(SpiderRuleset), data.Ruleset)
-                ? (SpiderRuleset)data.Ruleset
-                : SpiderRuleset.Classic;
-            var state = new GameState(data.SuitCount, (GameMode)data.Mode, savedRuleset);
+            Suit selectedSuit = Enum.IsDefined(typeof(Suit), data.SelectedSuit ?? (int)Suit.Spades)
+                ? (Suit)(data.SelectedSuit ?? (int)Suit.Spades)
+                : Suit.Spades;
+            var state = new GameState(1, (GameMode)data.Mode, selectedSuit: selectedSuit);
             state.CompletedSequences = data.CompletedSequences;
-            // Restore the actual suits of completed piles. Older save files did not
-            // store this information, so retain the former Spades placeholder for
-            // those already-completed piles only.
-            foreach (int suitValue in (data.CompletedSequenceSuits ?? new List<int>()).Take(Math.Max(0, data.CompletedSequences)))
-            {
-                if (Enum.IsDefined(typeof(Suit), suitValue))
-                    state.CompletedSequenceSuits.Add((Suit)suitValue);
-                else
-                    state.CompletedSequenceSuits.Add(Suit.Spades);
-            }
-            while (state.CompletedSequenceSuits.Count < Math.Max(0, data.CompletedSequences))
-                state.CompletedSequenceSuits.Add(Suit.Spades);
+            // Preserve the selected single suit for completed sequences.
+            for (int i = 0; i < Math.Max(0, data.CompletedSequences); i++)
+                state.CompletedSequenceSuits.Add(selectedSuit);
             state.EndlessLoops = data.EndlessLoops;
             state.DealsMade = data.DealsMade;
-            state.FaceDownPerColumn = data.FaceDownPerColumn > 0 ? data.FaceDownPerColumn : 5;
+            state.FaceDownPerColumn = data.FaceDownPerColumn switch
+            {
+                2 => 2, // previous two-suit Easy
+                3 => 2, // previous one-suit Easy
+                4 => 5, // previous two-suit Hard
+                5 => 3, // previous one-suit Medium
+                7 => 5, // previous one-suit Hard
+                _ => 3
+            };
 
             foreach (var c in data.Stock ?? new List<CardDto>())
-                state.Stock.Add(new Card((Suit)c.Suit, (Rank)c.Rank, c.Id));
+                state.Stock.Add(new Card(selectedSuit, (Rank)c.Rank, c.Id));
 
             for (int i = 0; i < Math.Min(10, data.Tableau?.Count ?? 0); i++)
             {
                 foreach (var c in data.Tableau[i] ?? new List<CardDto>())
                 {
-                    var card = new Card((Suit)c.Suit, (Rank)c.Rank, c.Id);
+                    var card = new Card(selectedSuit, (Rank)c.Rank, c.Id);
                     if (c.IsFaceDown) state.Tableau[i].AddFaceDown(card);
                     else state.Tableau[i].AddFaceUp(card);
                 }
@@ -167,7 +168,7 @@ public static class SaveManager
             // восстановить историю перемещений. Консервативно запрещаем достижение
             // в этой старой партии, чтобы его нельзя было получить нечестно.
             bool mixedSuitPlacementUsed = data.MixedSuitPlacementUsed ?? true;
-            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed);
+            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed, data.CurrentGameTime);
         }
         catch { return null; }
     }
@@ -197,9 +198,8 @@ public static class SaveManager
 public class SaveData
 {
     public int SuitCount { get; set; }
+    public int? SelectedSuit { get; set; }
     public int Mode { get; set; }
-    // Old save files omit this field and therefore remain Classic.
-    public int Ruleset { get; set; } = 0;
     public int EndlessLoops { get; set; }
     public int DealsMade { get; set; }
     public int FaceDownPerColumn { get; set; }
@@ -209,6 +209,8 @@ public class SaveData
     public int NextCardId { get; set; }
     // Nullable for backward compatibility: null means an older save without history.
     public bool? MixedSuitPlacementUsed { get; set; }
+    // Nullable for backward compatibility with saves created before Blitz timer persistence.
+    public double? CurrentGameTime { get; set; }
     public List<CardDto> Stock { get; set; } = new();
     public List<List<CardDto>> Tableau { get; set; } = new();
 }
