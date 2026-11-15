@@ -11,6 +11,8 @@ $project = Join-Path $repoRoot "src/AscendingSpider/AscendingSpider.csproj"
 $assetsFile = Join-Path (Split-Path $project -Parent) "obj/project.assets.json"
 $releaseRoot = Join-Path $repoRoot "artifacts/release/$Version"
 
+$script:TarExe = $null
+
 if (-not (Test-Path -LiteralPath $project -PathType Leaf)) {
     throw "Project not found: $project"
 }
@@ -19,109 +21,86 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw ".NET SDK not found. Install the .NET 10 SDK and try again."
 }
 
-# ------------------------------------------------------------
-# Find GNU tar.
-#
-# Windows may provide its own tar.exe (bsdtar).
-# We explicitly search for GNU tar and remember its full path.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Find GNU tar
+# ---------------------------------------------------------------------------
 
 function Find-GnuTar {
-    $candidates = [System.Collections.Generic.List[string]]::new()
+    $candidates = @()
 
-    function Add-TarCandidate {
-        param([string]$Path)
+    # First, check tar.exe commands visible through PATH.
+    $commands = Get-Command tar.exe -All -CommandType Application `
+        -ErrorAction SilentlyContinue
 
-        if ([string]::IsNullOrWhiteSpace($Path)) {
-            return
-        }
-
-        $normalizedPath = $Path.Trim('"')
-
-        if (
-            (Test-Path -LiteralPath $normalizedPath -PathType Leaf) -and
-            -not $candidates.Contains($normalizedPath)
-        ) {
-            $candidates.Add($normalizedPath)
-        }
+    foreach ($command in $commands) {
+        $candidates += $command.Source
     }
 
-    # Applications visible to PowerShell.
-    Get-Command tar.exe -All -CommandType Application -ErrorAction SilentlyContinue |
-        ForEach-Object {
-            Add-TarCandidate $_.Source
-        }
-
-    # Search every directory from PATH.
-    foreach ($pathEntry in ($env:PATH -split [System.IO.Path]::PathSeparator)) {
+    # Check PATH entries explicitly.
+    foreach ($pathEntry in ($env:PATH -split [IO.Path]::PathSeparator)) {
         if ([string]::IsNullOrWhiteSpace($pathEntry)) {
             continue
         }
 
-        Add-TarCandidate (Join-Path $pathEntry.Trim('"') "tar.exe")
-    }
+        $candidate = Join-Path $pathEntry "tar.exe"
 
-    # Common Git for Windows locations.
-    $gitTarPaths = @(
-        (Join-Path $env:ProgramFiles "Git\usr\bin\tar.exe"),
-        (Join-Path ${env:ProgramFiles(x86)} "Git\usr\bin\tar.exe")
-    )
-
-    foreach ($path in $gitTarPaths) {
-        Add-TarCandidate $path
-    }
-
-    # Common MSYS2 locations.
-    $msysRoots = @(
-        $env:MSYS2_ROOT,
-        "C:\msys64",
-        "C:\msys32",
-        "C:\tools\msys64"
-    )
-
-    foreach ($root in $msysRoots) {
-        if (-not [string]::IsNullOrWhiteSpace($root)) {
-            Add-TarCandidate (Join-Path $root "usr\bin\tar.exe")
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $candidates += $candidate
         }
     }
+
+    # Common Git for Windows and MSYS2 locations.
+    $knownPaths = @(
+        (Join-Path $env:ProgramFiles "Git/usr/bin/tar.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Git/usr/bin/tar.exe"),
+        "C:\msys64\usr\bin\tar.exe",
+        "C:\msys32\usr\bin\tar.exe"
+    )
+
+    foreach ($candidate in $knownPaths) {
+        if (
+            -not [string]::IsNullOrWhiteSpace($candidate) -and
+            (Test-Path -LiteralPath $candidate -PathType Leaf)
+        ) {
+            $candidates += $candidate
+        }
+    }
+
+    $candidates = @(
+        $candidates |
+        Where-Object { $_ } |
+        Select-Object -Unique
+    )
 
     foreach ($candidate in $candidates) {
-        Write-Host "Checking tar: $candidate" -ForegroundColor DarkGray
+        Write-Host "Checking tar: $candidate"
 
         $versionOutput = (& $candidate --version 2>&1 | Out-String)
-        $exitCode = $LASTEXITCODE
 
-        if ($exitCode -eq 0 -and $versionOutput -match "GNU tar") {
+        if (
+            $LASTEXITCODE -eq 0 -and
+            $versionOutput -match "GNU tar"
+        ) {
+            $script:TarExe = $candidate
             Write-Host "GNU tar found: $candidate" -ForegroundColor Green
-            return $candidate
+            return
         }
-    }
-
-    $checkedPaths = if ($candidates.Count -gt 0) {
-        $candidates -join "`n"
-    }
-    else {
-        "(no tar.exe candidates found)"
     }
 
     throw @"
 GNU tar was not found.
 
-Install Git for Windows or MSYS2, or add the directory
-containing GNU tar.exe to PATH.
-
-Checked paths:
-$checkedPaths
+Install Git for Windows or MSYS2.
+The script needs GNU tar to create a Linux TAR.GZ archive
+with executable permissions preserved.
 "@
 }
 
-$script:TarExe = Find-GnuTar
+Find-GnuTar
 
-New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
-
-# ------------------------------------------------------------
-# Find native NuGet package directories.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Locate native NuGet package directories
+# ---------------------------------------------------------------------------
 
 function Get-NuGetPackageNativeDirectory {
     param(
@@ -160,9 +139,9 @@ function Get-NuGetPackageNativeDirectory {
     throw "Native files for $PackageName ($Rid) were not found in the NuGet cache. Expected: $relativePath"
 }
 
-# ------------------------------------------------------------
-# Copy MonoGame native libraries.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Copy MonoGame native libraries
+# ---------------------------------------------------------------------------
 
 function Copy-MonoGameNativeLibraries {
     param(
@@ -177,7 +156,8 @@ function Copy-MonoGameNativeLibraries {
         throw "NuGet assets file not found: $assetsFile. Run dotnet restore first."
     }
 
-    $assets = Get-Content -LiteralPath $assetsFile -Raw | ConvertFrom-Json
+    $assets = Get-Content -LiteralPath $assetsFile -Raw |
+        ConvertFrom-Json
 
     $packages = @(
         "MonoGame.Library.SDL",
@@ -190,7 +170,9 @@ function Copy-MonoGameNativeLibraries {
             -PackageName $packageName `
             -Rid $Rid
 
-        $nativeFiles = @(Get-ChildItem -LiteralPath $nativeDirectory -File)
+        $nativeFiles = @(
+            Get-ChildItem -LiteralPath $nativeDirectory -File
+        )
 
         if ($nativeFiles.Count -eq 0) {
             throw "No native files found in $nativeDirectory"
@@ -204,7 +186,8 @@ function Copy-MonoGameNativeLibraries {
                 -Destination $destination `
                 -Force
 
-            Write-Host "Native dependency copied: $($nativeFile.Name)" -ForegroundColor DarkGreen
+            Write-Host "Native dependency copied: $($nativeFile.Name)" `
+                -ForegroundColor DarkGreen
         }
     }
 
@@ -237,9 +220,9 @@ function Copy-MonoGameNativeLibraries {
     }
 }
 
-# ------------------------------------------------------------
-# Create Linux launcher.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Create Linux launcher
+# ---------------------------------------------------------------------------
 
 function Add-LinuxLauncher {
     param(
@@ -258,28 +241,19 @@ export LD_LIBRARY_PATH="$SCRIPT_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$SCRIPT_DIR/AscendingSpider" "$@"
 '@
 
-    # UTF-8 without BOM: required for a reliable shebang.
+    # UTF-8 without BOM: the shebang must be the first bytes of the file.
     $encoding = New-Object System.Text.UTF8Encoding($false)
 
-    $launcherPath = Join-Path $Output "run.sh"
-
     [System.IO.File]::WriteAllText(
-        $launcherPath,
+        (Join-Path $Output "run.sh"),
         $launcher + "`n",
         $encoding
     )
 }
 
-# ------------------------------------------------------------
-# Create a TAR.GZ archive using GNU tar.
-#
-# Regular files: 0644
-# Directories:   0755
-# Executables:   0755
-#
-# The executable files are appended separately so their
-# executable permissions are preserved in the TAR archive.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Create Linux TAR.GZ archive
+# ---------------------------------------------------------------------------
 
 function New-TarGzArchive {
     param(
@@ -290,133 +264,147 @@ function New-TarGzArchive {
         [string]$Archive
     )
 
-    $temporaryTar = "$Archive.tmp.tar"
+    $archiveDirectory = Split-Path $Archive -Parent
 
-    if (Test-Path -LiteralPath $temporaryTar) {
-        Remove-Item -LiteralPath $temporaryTar -Force
+    $temporaryTar = Join-Path `
+        $archiveDirectory `
+        ([IO.Path]::GetFileName($Archive) + ".tmp.tar")
+
+    $temporaryGzip = "$Archive.tmp"
+
+    foreach ($temporaryFile in @($temporaryTar, $temporaryGzip)) {
+        if (Test-Path -LiteralPath $temporaryFile) {
+            Remove-Item -LiteralPath $temporaryFile -Force
+        }
     }
 
-    if (Test-Path -LiteralPath $Archive) {
-        Remove-Item -LiteralPath $Archive -Force
-    }
+    Write-Host "Creating TAR archive..." -ForegroundColor Cyan
 
     try {
-        Write-Host "Creating TAR archive..." -ForegroundColor Cyan
+        # IMPORTANT:
+        # Run GNU tar from inside the publish directory.
+        # This avoids passing Windows paths to tar's -C argument.
+        Push-Location -LiteralPath $Output
 
-        # First pass:
-        # Add everything except the two executable files.
-        #
-        # go-w,a+rX:
-        # - remove group/other write permissions;
-        # - add read permissions for everyone;
-        # - add execute permissions to directories.
-        # Regular files remain non-executable.
+        try {
+            # Add regular files and directories.
+            # The executable and launcher are added separately
+            # with explicit 0755 permissions.
+            $createArgs = @(
+                "--force-local",
+                "--format=posix",
+                "--mode=go-w,a+rX",
+                "-cf", $temporaryTar,
+                "--exclude=./AscendingSpider",
+                "--exclude=./run.sh",
+                "."
+            )
 
-        $createArgs = @(
-            "--format=posix",
-            "--mode=go-w,a+rX",
-            "-cf",
-            $temporaryTar,
-            "-C",
-            $Output,
-            "--exclude=./AscendingSpider",
-            "--exclude=./run.sh",
-            "."
-        )
+            & $script:TarExe @createArgs
 
-        & $script:TarExe @createArgs
+            if ($LASTEXITCODE -ne 0) {
+                throw "GNU tar failed while creating the TAR archive. Exit code: $LASTEXITCODE"
+            }
 
-        if ($LASTEXITCODE -ne 0) {
-            throw "GNU tar failed while creating the TAR archive. Exit code: $LASTEXITCODE"
+            # Add the Linux executable and launcher with 0755 permissions.
+            $appendArgs = @(
+                "--force-local",
+                "--format=posix",
+                "--mode=0755",
+                "-rf", $temporaryTar,
+                "--",
+                "AscendingSpider",
+                "run.sh"
+            )
+
+            & $script:TarExe @appendArgs
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "GNU tar failed while adding executable files. Exit code: $LASTEXITCODE"
+            }
+
+            # Verify the archive and executable permissions.
+            $listing = @(
+                & $script:TarExe --force-local -tvf $temporaryTar 2>&1
+            )
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "GNU tar failed while verifying the TAR archive. Exit code: $LASTEXITCODE"
+            }
+
+            $executableEntry = $listing | Where-Object {
+                $_ -match '^-rwx\S*\s+.*\sAscendingSpider$'
+            }
+
+            $launcherEntry = $listing | Where-Object {
+                $_ -match '^-rwx\S*\s+.*\srun\.sh$'
+            }
+
+            if (-not $executableEntry) {
+                throw "AscendingSpider does not have executable permissions in the TAR archive."
+            }
+
+            if (-not $launcherEntry) {
+                throw "run.sh does not have executable permissions in the TAR archive."
+            }
         }
-
-        # Second pass:
-        # Append the application executable and launcher
-        # with explicit executable permissions (0755).
-
-        $appendArgs = @(
-            "--format=posix",
-            "--mode=0755",
-            "-rf",
-            $temporaryTar,
-            "-C",
-            $Output,
-            "--",
-            "AscendingSpider",
-            "run.sh"
-        )
-
-        & $script:TarExe @appendArgs
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "GNU tar failed while adding executable files. Exit code: $LASTEXITCODE"
-        }
-
-        # Verify that both executable entries have 0755-like
-        # permissions in the generated TAR archive.
-
-        $listing = @(& $script:TarExe -tvf $temporaryTar 2>&1)
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Could not verify the generated TAR archive."
-        }
-
-        $listingText = $listing -join "`n"
-
-        if ($listingText -notmatch '(?m)^-rwx[^\r\n]*AscendingSpider$') {
-            throw "The AscendingSpider executable does not have executable permissions in the TAR archive."
-        }
-
-        if ($listingText -notmatch '(?m)^-rwx[^\r\n]*run\.sh$') {
-            throw "The run.sh launcher does not have executable permissions in the TAR archive."
+        finally {
+            Pop-Location
         }
 
         # Compress the TAR file using .NET GZipStream.
-        # This avoids depending on a separate gzip.exe.
-
         Write-Host "Compressing TAR archive..." -ForegroundColor Cyan
 
-        $inputStream = $null
-        $outputStream = $null
-        $gzipStream = $null
+        $sourceStream = [System.IO.File]::OpenRead($temporaryTar)
 
         try {
-            $inputStream = [System.IO.File]::OpenRead($temporaryTar)
-            $outputStream = [System.IO.File]::Create($Archive)
+            $destinationStream = [System.IO.File]::Create($temporaryGzip)
 
-            $gzipStream = [System.IO.Compression.GZipStream]::new(
-                $outputStream,
-                [System.IO.Compression.CompressionLevel]::Optimal
-            )
+            try {
+                $gzipStream = [System.IO.Compression.GZipStream]::new(
+                    $destinationStream,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                )
 
-            $inputStream.CopyTo($gzipStream)
+                try {
+                    $sourceStream.CopyTo($gzipStream)
+                }
+                finally {
+                    $gzipStream.Dispose()
+                }
+            }
+            finally {
+                $destinationStream.Dispose()
+            }
         }
         finally {
-            if ($null -ne $gzipStream) {
-                $gzipStream.Dispose()
-            }
-
-            if ($null -ne $inputStream) {
-                $inputStream.Dispose()
-            }
-
-            if ($null -ne $outputStream) {
-                $outputStream.Dispose()
-            }
+            $sourceStream.Dispose()
         }
+
+        # Replace an existing archive only after successful compression.
+        if (Test-Path -LiteralPath $Archive) {
+            Remove-Item -LiteralPath $Archive -Force
+        }
+
+        Move-Item `
+            -LiteralPath $temporaryGzip `
+            -Destination $Archive `
+            -Force
 
         Write-Host "TAR.GZ archive created: $Archive" -ForegroundColor Green
     }
     finally {
-        if (Test-Path -LiteralPath $temporaryTar) {
-            Remove-Item -LiteralPath $temporaryTar -Force
+        foreach ($temporaryFile in @($temporaryTar, $temporaryGzip)) {
+            if (Test-Path -LiteralPath $temporaryFile) {
+                Remove-Item -LiteralPath $temporaryFile -Force
+            }
         }
     }
 }
 
-# ------------------------------------------------------------
-# Publish one runtime.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Publish one runtime
+# ---------------------------------------------------------------------------
 
 function Publish-Runtime {
     param(
@@ -429,13 +417,18 @@ function Publish-Runtime {
 
     $output = Join-Path $releaseRoot $Rid
 
-    if ($Rid -eq "linux-x64") {
-        $archive = Join-Path $releaseRoot "AscendingSpider-$Version-$Rid.tar.gz"
+    $archiveExtension = if ($Rid -eq "linux-x64") {
+        "tar.gz"
     }
     else {
-        $archive = Join-Path $releaseRoot "AscendingSpider-$Version-$Rid.zip"
+        "zip"
     }
 
+    $archive = Join-Path `
+        $releaseRoot `
+        "AscendingSpider-$Version-$Rid.$archiveExtension"
+
+    # Clean previous output.
     if (Test-Path -LiteralPath $output) {
         Remove-Item -LiteralPath $output -Recurse -Force
     }
@@ -468,7 +461,6 @@ function Publish-Runtime {
         "-p:PublishReadyToRun=false",
         "-p:TieredCompilation=false",
         "-p:UseAppHost=true",
-
         "-p:DebugType=None",
         "-p:DebugSymbols=false"
     )
@@ -485,7 +477,7 @@ function Publish-Runtime {
         throw "Executable was not created: $executable"
     }
 
-    # Copy SDL and OpenAL native libraries.
+    # Copy SDL2 and OpenAL native libraries.
     Copy-MonoGameNativeLibraries -Rid $Rid -Output $output
 
     # MonoGame ContentManager loads XNB files from Content.
@@ -496,13 +488,18 @@ function Publish-Runtime {
     }
 
     $xnbCount = @(
-        Get-ChildItem -LiteralPath $contentDir -Recurse -File -Filter "*.xnb"
+        Get-ChildItem `
+            -LiteralPath $contentDir `
+            -Recurse `
+            -File `
+            -Filter "*.xnb"
     ).Count
 
     if ($xnbCount -eq 0) {
         throw "No XNB files found in $contentDir. Archive will not be created."
     }
 
+    # Create Linux launcher and TAR.GZ.
     if ($Rid -eq "linux-x64") {
         Add-LinuxLauncher -Output $output
 
@@ -511,6 +508,7 @@ function Publish-Runtime {
             -Archive $archive
     }
     else {
+        # Windows release is distributed as ZIP.
         Compress-Archive `
             -Path (Join-Path $output "*") `
             -DestinationPath $archive `
@@ -518,16 +516,18 @@ function Publish-Runtime {
     }
 
     Write-Host ""
-    Write-Host "Runtime: $Rid" -ForegroundColor Green
-    Write-Host "Executable: $executable"
+    Write-Host "Runtime: $Rid" -ForegroundColor Cyan
+    Write-Host "Executable: $executable" -ForegroundColor Green
     Write-Host "Native dependencies: verified"
     Write-Host "Content assets: $xnbCount XNB file(s)"
     Write-Host "Archive: $archive" -ForegroundColor Green
 }
 
-# ------------------------------------------------------------
-# Build release packages.
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Publish all supported runtimes
+# ---------------------------------------------------------------------------
+
+New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
 Publish-Runtime `
     -Rid "win-x64" `
@@ -539,5 +539,7 @@ Publish-Runtime `
 
 Write-Host ""
 Write-Host "Release packages created in: $releaseRoot" -ForegroundColor Green
+
+Write-Host ""
 Write-Host "Windows: extract the ZIP and run AscendingSpider.exe"
 Write-Host "Linux: extract the TAR.GZ and run ./run.sh"
