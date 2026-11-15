@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 #nullable enable
 using System.Collections.Generic;
 using System.Linq;
@@ -10,7 +10,6 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
@@ -25,7 +24,7 @@ public partial class Game1
         if (_animations.Count > 0 || _isDragging)
             return false;
 
-        // No legal move and no legal stock deal is an immediate loss.
+        // No legal move and no legal stock deal means the position is stuck.
         if (!GameEngine.HasAnyMoves(_gameState))
             return true;
 
@@ -71,12 +70,12 @@ public partial class Game1
             }
             catch (OperationCanceledException)
             {
-                // A cancelled analysis is inconclusive, never a loss.
+                // A cancelled analysis is inconclusive, not a dead end.
                 _progressCheckResult = ProgressReachability.Unknown;
             }
             catch (Exception)
             {
-                // A failed analysis is also inconclusive, never a loss.
+                // A failed analysis is also inconclusive, not a dead end.
                 _progressCheckResult = ProgressReachability.Unknown;
             }
             finally
@@ -109,7 +108,6 @@ public partial class Game1
                 int prevTotalCompleted = _gameState.TotalCompletedSequences;
                 int prevEndlessLoops = _gameState.EndlessLoops;
                 int cardsMoved = GameRules.GetSequenceEnd(stateBefore.Tableau[_dragFromColumn], _dragFromIndex) - _dragFromIndex + 1;
-                bool crossSuitPlacement = IsCrossSuitPlacement(stateBefore, _dragFromColumn, _dragFromIndex, col);
                 bool attemptedWrongPlacement =
                     col != _dragFromColumn
                     && !stateBefore.Tableau[col].IsEmpty
@@ -119,9 +117,6 @@ public partial class Game1
                 bool success = GameEngine.TryMove(_gameState, _dragFromColumn, _dragFromIndex, col);
                 if (success) {
                     ClearHintState();
-                    if (IsPerfectOrderEligibleSuitCount(_gameState.SuitCount) && crossSuitPlacement)
-                        _mixedSuitPlacementUsedThisGame = true;
-
                     _undoStack.Add(stateBefore); 
                     if (_undoStack.Count > 30) _undoStack.RemoveAt(0);
                     _cardMoveSound.Play(1.0f, cardsMoved > 1 ? -0.2f : 0.0f, 0f);
@@ -233,7 +228,14 @@ public partial class Game1
     private void PerformUndo()
     {
         ClearHintState();
-        _usedUndoThisGame = true; if (_undoStack.Count == 0) return; _hintState = HintState.None; _stuckSoundPlayed = false;
+        _usedUndoThisGame = true;
+        if (_undoStack.Count == 0)
+        {
+            SaveGame();
+            return;
+        }
+        _hintState = HintState.None;
+        _stuckSoundPlayed = false;
         var prevState = _undoStack[^1]; 
         _undoStack.RemoveAt(_undoStack.Count - 1);
         var currentState = _gameState;

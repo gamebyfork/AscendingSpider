@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 #nullable enable
 using System.Collections.Generic;
 using System.Linq;
@@ -10,7 +10,6 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 

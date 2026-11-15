@@ -10,7 +10,7 @@ public class SolverTests
     public void Solver_Can_Solve_OneSuit_Game()
     {
         var rng = new Random(123); // Фиксированный сид для повторяемости
-        var state = DeckFactory.Deal(suitCount: 1, faceDownPerColumn: 5, rng);
+        var state = DeckFactory.Deal(faceDownPerColumn: 5, rng);
         
         var solver = new SpiderSolver();
         // Даём лимит в 10 000 состояний для быстрого теста
@@ -33,7 +33,7 @@ public class SolverTests
     [Fact]
     public void DeckFactory_Always_Creates_One_Spade_Suit()
     {
-        var deck = DeckFactory.CreateDeck(suitCount: 4);
+        var deck = DeckFactory.CreateDeck();
 
         Assert.Equal(104, deck.Count);
         Assert.All(deck, card => Assert.Equal(Suit.Spades, card.Suit));
@@ -44,7 +44,7 @@ public class SolverTests
     [Fact]
     public void DeckFactory_Creates_The_Selected_Single_Suit()
     {
-        var deck = DeckFactory.CreateDeck(suitCount: 1, selectedSuit: Suit.Hearts);
+        var deck = DeckFactory.CreateDeck(selectedSuit: Suit.Hearts);
 
         Assert.Equal(104, deck.Count);
         Assert.All(deck, card => Assert.Equal(Suit.Hearts, card.Suit));
@@ -53,18 +53,11 @@ public class SolverTests
     [Fact]
     public void GameState_Preserves_Selected_Suit_When_Cloned()
     {
-        var state = new GameState(suitCount: 1, selectedSuit: Suit.Diamonds);
+        var state = new GameState(selectedSuit: Suit.Diamonds);
         var clone = state.Clone();
 
         Assert.Equal(Suit.Diamonds, clone.SelectedSuit);
     }
 
-    [Fact]
-    public void GameState_Normalizes_SuitCount_To_One()
-    {
-        var state = new GameState(suitCount: 4);
-
-        Assert.Equal(1, state.SuitCount);
-    }
 
 }

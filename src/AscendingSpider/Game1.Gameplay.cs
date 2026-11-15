@@ -22,26 +22,19 @@ public partial class Game1
     {
         ClearHintState();
         SaveManager.DeleteSave(); UpdateContinueButton();
-        const int suitCount = 1;
         _currentSuit = (Suit)Math.Clamp(_selectorSuit.SelectedIndex, 0, 3);
         _currentDifficulty = _selectorDifficulty.SelectedIndex;
         // One-suit difficulty is controlled only by the number of hidden cards.
         _faceDownPerColumn = _currentDifficulty switch { 0 => 2, 1 => 3, 2 => 5, _ => 3 };
         _currentMode = (GameMode)_selectorMode.SelectedIndex;
         
-        _generationAttempts = 0;
-        _generationUnsolvableAttempts = 0;
-        _generationUnknownAttempts = 0;
-        _showDealSolvabilityStatus = false;
         _usedUndoThisGame = false; _usedHintThisGame = false;
-        _mixedSuitPlacementUsedThisGame = false;
         _currentScreen = GameScreen.Generating;
-        int suitCountLocal = suitCount; int faceDownLocal = _faceDownPerColumn; var modeLocal = _currentMode; var suitLocal = _currentSuit;
-        _dealGenerationTask = Task.Run(() => GenerateSolvableParallel(suitCountLocal, faceDownLocal, modeLocal, selectedSuit: suitLocal));
+        int faceDownLocal = _faceDownPerColumn; var modeLocal = _currentMode; var suitLocal = _currentSuit;
+        _dealGenerationTask = Task.Run(() => GenerateSolvableParallel(faceDownLocal, modeLocal, selectedSuit: suitLocal));
     }
 
-    private GeneratedDeal GenerateSolvableParallel(
-        int suitCount,
+    private GameState GenerateSolvableParallel(
         int faceDown,
         GameMode mode,
         int maxSeconds = 35,
@@ -51,9 +44,7 @@ public partial class Game1
         // certified by the standard Spider solver.
         if (mode == GameMode.Endless)
         {
-            return new GeneratedDeal(
-                DeckFactory.Deal(suitCount, faceDown, new Random(), mode, selectedSuit: selectedSuit),
-                SolvabilityStatus.Unknown);
+            return DeckFactory.Deal(faceDown, new Random(), mode, selectedSuit: selectedSuit);
         }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(maxSeconds));
@@ -90,8 +81,7 @@ public partial class Game1
                     {
                         cts.Token.ThrowIfCancellationRequested();
 
-                        GameState candidate = DeckFactory.Deal(suitCount, faceDown, rng, mode, selectedSuit: selectedSuit);
-                        Interlocked.Increment(ref _generationAttempts);
+                        GameState candidate = DeckFactory.Deal(faceDown, rng, mode, selectedSuit: selectedSuit);
 
                         SolverSearchResult search;
                         try
@@ -100,14 +90,6 @@ public partial class Game1
                         }
                         catch (OperationCanceledException)
                         {
-                            // If the global timer expired while this candidate
-                            // was being searched (rather than another worker
-                            // finding a solution), this attempt is Unknown.
-                            lock (resultLock)
-                            {
-                                if (solvedDeal == null)
-                                    Interlocked.Increment(ref _generationUnknownAttempts);
-                            }
                             return;
                         }
 
@@ -127,14 +109,12 @@ public partial class Game1
                         {
                             // This candidate was exhaustively searched. It is
                             // safe to discard; unlike Unknown, this is a proof.
-                            Interlocked.Increment(ref _generationUnsolvableAttempts);
                             continue;
                         }
 
                         // The state/time budget was reached. Keep the strongest
                         // partial candidate, but never label it as solved or
                         // proven impossible.
-                        Interlocked.Increment(ref _generationUnknownAttempts);
                         lock (resultLock)
                         {
                             bool isBetter =
@@ -164,25 +144,20 @@ public partial class Game1
         lock (resultLock)
         {
             if (solvedDeal != null)
-                return new GeneratedDeal(solvedDeal, SolvabilityStatus.Solvable);
+                return solvedDeal;
 
             if (bestUnknownDeal != null)
-                return new GeneratedDeal(bestUnknownDeal, SolvabilityStatus.Unknown);
+                return bestUnknownDeal;
         }
 
-        // Every candidate may have been proven impossible before the global
-        // time limit. A final fresh candidate has not been searched, so its
-        // status is explicitly Unknown rather than Unsolvable.
-        return new GeneratedDeal(
-            DeckFactory.Deal(suitCount, faceDown, new Random(), mode, selectedSuit: selectedSuit),
-            SolvabilityStatus.Unknown);
+        // No candidate was proven solvable within the time budget. Use a fresh
+        // deal rather than blocking the UI or claiming it is unsolvable.
+        return DeckFactory.Deal(faceDown, new Random(), mode, selectedSuit: selectedSuit);
     }
 
-    private void ApplyGeneratedDeal(GeneratedDeal generated)
+    private void ApplyGeneratedDeal(GameState generated)
     {
-        _gameState = generated.State;
-        _lastDealSolvability = generated.Status;
-        _showDealSolvabilityStatus = _gameState.Mode != GameMode.Endless;
+        _gameState = generated;
 
         GameEngine.Reset();
         _undoStack.Clear();
@@ -208,7 +183,8 @@ public partial class Game1
         if (!SaveManager.Settings.HasSeenTutorial)
             _showTutorial = true;
 
-        _dealDistSound.Play();
+        _dealDistSoundInstance?.Stop();
+        _dealDistSoundStarted = false;
 
         for (int col = 0; col < 10; col++)
         {
@@ -239,8 +215,15 @@ public partial class Game1
     {
         var loaded = SaveManager.Load();
         if (loaded.HasValue) {
+            // Продолжение восстанавливает уже разложенную партию без анимации раздачи.
+            // Считаем однократный звук раздачи уже использованным для этой сессии.
+            _dealDistSoundInstance?.Stop();
+            _dealDistSoundStarted = true;
+
             _gameState = loaded.Value.State;
             _currentSuit = _gameState.SelectedSuit;
+            _currentMode = _gameState.Mode;
+            _selectorMode.SelectedIndex = (int)_currentMode;
             _selectorSuit.SelectedIndex = (int)_currentSuit;
             _faceDownPerColumn = loaded.Value.FaceDownPerColumn;
             _currentDifficulty = _faceDownPerColumn switch { 2 => 0, 3 => 1, _ => 2 };
@@ -269,12 +252,10 @@ public partial class Game1
             _isGameActive = true;
             _winHandled = false;
             _winConfettiTimer = 0f;
-            _showDealSolvabilityStatus = false;
-            _usedUndoThisGame = false;
-            _usedHintThisGame = false;
+            _usedUndoThisGame = loaded.Value.UsedUndoThisGame;
+            _usedHintThisGame = loaded.Value.UsedHintThisGame;
             // Старые сохранения без этого поля считаются неподходящими для
             // достижения: по ним невозможно достоверно узнать историю ходов.
-            _mixedSuitPlacementUsedThisGame = loaded.Value.MixedSuitPlacementUsed;
             RefreshCardBackSelector();
         }
     }
@@ -287,11 +268,18 @@ public partial class Game1
             SaveManager.Save(
                 _gameState,
                 _faceDownPerColumn,
-                _mixedSuitPlacementUsedThisGame,
-                _gameTimeSeconds);
+                _gameTimeSeconds,
+                _usedUndoThisGame,
+                _usedHintThisGame);
             // Keep the legacy settings field up to date for compatibility with
             // save files created by older versions of the game.
             SaveManager.SaveSettings();
+            UpdateContinueButton();
+        }
+        else if (_gameState?.IsWon == true)
+        {
+            // Never leave a pre-win checkpoint available to the Continue button.
+            SaveManager.DeleteSave();
             UpdateContinueButton();
         }
     }

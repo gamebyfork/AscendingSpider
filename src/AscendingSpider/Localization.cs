@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace AscendingSpider;
 
@@ -75,19 +75,10 @@ public static class Localization
         { "AchNoHintDesc", ("Win without using Hint", "Выиграйте без подсказок", "Gana sin pistas", "不使用提示获胜", "ヒントを使わず勝利") },
         { "AchSpeedrun", ("Speedrunner", "Скороход", "Velocista", "速通", "スピードランナー") },
         { "AchSpeedrunDesc", ("Win in under 5 minutes", "Выиграйте за 5 минут", "Gana en menos de 5 minutos", "5分钟内获胜", "5分以内に勝利") },
-        { "Ach4Suits", ("Spider Master", "Мастер Паука", "Maestro Araña", "蜘蛛大师", "スパイダーマスター") },
-        { "Ach4SuitsDesc", ("Win with 4 suits", "Выиграйте на 4 мастях", "Gana con 4 palos", "4种花色获胜", "4スートで勝利") },
         { "AchHardMode", ("Hardcore", "Хардкор", "Modo Difícil", "硬核", "ハードコア") },
         { "AchHardModeDesc", ("Win on hard difficulty", "Выиграйте на сложном уровне", "Gana en difícil", "困难难度获胜", "難しい難易度で勝利") },
         { "AchDedicated", ("Passion", "Азарт", "Pasión", "热情", "情熱") },
         { "AchDedicatedDesc", ("Win 10 games", "Выиграйте 10 партий", "Gana 10 partidas", "赢得10场比赛", "10勝する") },
-        { "AchPerfectOrder", ("Perfect Order", "Идеальный порядок", "Orden Perfecto", "完美秩序", "パーフェクトオーダー") },
-        { "AchPerfectOrderDesc", (
-            "Win a game without ever placing a card of one suit onto a card of another suit.",
-            "Победите, не смешивая масти при выкладке.",
-            "Gana una partida sin colocar nunca una carta de un palo sobre una carta de otro palo.",
-            "赢得一场游戏，且从未将一种花色的牌放在另一种花色的牌上。",
-            "異なるスートのカードの上に別のスートのカードを一度も置かずに勝利する") },
         { "AchUnlocked", ("Unlocked!", "Получено!", "¡Desbloqueado!", "已解锁！", "解除！") },
         { "Resume", ("Resume", "Продолжить", "Reanudar", "继续", "再開") },
         { "Paused", ("Paused", "Пауза", "Pausa", "暂停", "一時停止") },

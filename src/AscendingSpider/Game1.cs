@@ -10,7 +10,6 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
@@ -55,6 +54,8 @@ public partial class Game1 : Game
     private SoundEffect _stuckSound = null!;
     private SoundEffect _wrongSound = null!;
     private SoundEffect _dealDistSound = null!;
+    private SoundEffectInstance? _dealDistSoundInstance;
+    private bool _dealDistSoundStarted;
     private float _volume = 0.5f;
 
     private Texture2D _borderBlack2 = null!;
@@ -117,22 +118,14 @@ public partial class Game1 : Game
 
     private double _gameTimeSeconds = 0;
     private bool _isGameActive = false;
-    private double _bestTimeEasy = 0, _bestTimeMedium = 0, _bestTimeHard = 0;
     private float _winConfettiTimer = 0f;
 
     private bool _usedUndoThisGame = false;
     private bool _usedHintThisGame = false;
-    // Исторический флаг текущей партии: остаётся true даже после отмены хода.
-    private bool _mixedSuitPlacementUsedThisGame = false;
     private bool _winHandled = false;
     private int _currentDifficulty = 0;
 
-    private Task<GeneratedDeal>? _dealGenerationTask = null;
-    private int _generationAttempts = 0;
-    private int _generationUnsolvableAttempts = 0;
-    private int _generationUnknownAttempts = 0;
-    private SolvabilityStatus _lastDealSolvability = SolvabilityStatus.Unknown;
-    private bool _showDealSolvabilityStatus = false;
+    private Task<GameState>? _dealGenerationTask = null;
 
     // Dead-end reachability is evaluated once per distinct board position on a
     // worker thread. This avoids freezing the MonoGame update loop on complex
@@ -168,7 +161,6 @@ public partial class Game1 : Game
         Color CardBack,
         bool IsDark);
 
-    private sealed record GeneratedDeal(GameState State, SolvabilityStatus Status);
 
     private bool _isDragging = false;
     private int _dragFromColumn = -1;
@@ -277,9 +269,6 @@ public partial class Game1 : Game
             ? (Theme)savedTheme
             : Theme.Classic;
         SaveManager.Settings.Theme = (int)_currentTheme;
-        _bestTimeEasy = SaveManager.Settings.BestTimeEasy;
-        _bestTimeMedium = SaveManager.Settings.BestTimeMedium;
-        _bestTimeHard = SaveManager.Settings.BestTimeHard;
 
         Window.Title = Localization.Get("Title");
 
@@ -326,11 +315,11 @@ public partial class Game1 : Game
         _btnResetStats = new UIButton { Rect = new Rectangle(510, 700, 480, 58), TextKey = "ResetStats", OnClick = () => {
             if (_confirmReset)
             {
-                SaveManager.Settings.Wins = 0; SaveManager.Settings.Losses = 0;
+                SaveManager.Settings.Wins = 0;
                 SaveManager.Settings.BestTimeEasy = 0; SaveManager.Settings.BestTimeMedium = 0; SaveManager.Settings.BestTimeHard = 0;
                 SaveManager.Settings.AchFirstWin = false; SaveManager.Settings.AchNoUndo = false; SaveManager.Settings.AchNoHint = false;
-                SaveManager.Settings.AchSpeedrun = false; SaveManager.Settings.Ach4Suits = false; SaveManager.Settings.AchHardMode = false; 
-                SaveManager.Settings.AchDedicated = false; SaveManager.Settings.AchPerfectOrder = false;
+                SaveManager.Settings.AchSpeedrun = false; SaveManager.Settings.AchHardMode = false; 
+                SaveManager.Settings.AchDedicated = false;
                 _achievementQueue.Clear(); _activeAchievementPopup = null;
                 SaveManager.SaveSettings(); RecalcMainMenuButtons(); _confirmReset = false;
                 RefreshCardBackSelector();
@@ -351,8 +340,8 @@ public partial class Game1 : Game
         _btnWinMenu = new UIButton { Rect = new Rectangle(625, 585, 250, 68), TextKey = "Menu", OnClick = () => { SaveManager.DeleteSave(); UpdateContinueButton(); _currentScreen = GameScreen.MainMenu; } };
 
         _btnStuckUndo = new UIButton { Rect = new Rectangle(500, 560, 225, 68), TextKey = "Undo", OnClick = () => PerformUndo() };
-        _btnStuckRestart = new UIButton { Rect = new Rectangle(775, 560, 225, 68), TextKey = "Restart", OnClick = () => { SaveManager.DeleteSave(); StartNewGame(); } };
-        _btnStuckMenu = new UIButton { Rect = new Rectangle(625, 660, 250, 68), TextKey = "Menu", OnClick = () => { _currentScreen = GameScreen.MainMenu; } };
+        _btnStuckRestart = new UIButton { Rect = new Rectangle(775, 560, 225, 68), TextKey = "Restart", OnClick = () => { SaveManager.DeleteSave(); UpdateContinueButton(); StartNewGame(); } };
+        _btnStuckMenu = new UIButton { Rect = new Rectangle(625, 660, 250, 68), TextKey = "Menu", OnClick = () => { SaveManager.DeleteSave(); UpdateContinueButton(); _currentScreen = GameScreen.MainMenu; } };
 
         _btnPauseResume = new UIButton { Rect = new Rectangle(625, 330, 250, 70), TextKey = "Resume", OnClick = () => { _currentScreen = GameScreen.Playing; } };
         _btnPauseRestart = new UIButton { Rect = new Rectangle(625, 435, 250, 70), TextKey = "Restart", OnClick = () => { SaveManager.DeleteSave(); StartNewGame(); } };
@@ -370,6 +359,8 @@ public partial class Game1 : Game
         if (disposing)
         {
             ClearHintState();
+            _dealDistSoundInstance?.Dispose();
+            _dealDistSoundInstance = null;
             _tableBackdrop?.Dispose();
             _cardShadow?.Dispose();
             foreach (Texture2D texture in _hintOutlineCache.Values)

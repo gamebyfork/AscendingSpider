@@ -2,15 +2,12 @@ using System;
 #nullable enable
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
@@ -26,6 +23,7 @@ public partial class Game1
             _dragFromColumn = -1; 
             _dragFromIndex = -1; 
             _dragHoldTime = 0;
+            UpdateDealAudioPlayback();
             base.Update(gameTime); 
             return; 
         }
@@ -86,16 +84,14 @@ public partial class Game1
             case GameScreen.Leaderboard: _btnBackLeaderboard.Update(mouseState, _previousMouseState, _clickSound, _hoverButtonSound); break;
             case GameScreen.Generating:
                 if (_dealGenerationTask != null && _dealGenerationTask.IsCompleted) {
-                    GeneratedDeal generated;
+                    GameState generated;
                     try
                     {
                         generated = _dealGenerationTask.Result;
                     }
                     catch
                     {
-                        generated = new GeneratedDeal(
-                            DeckFactory.Deal(1, _faceDownPerColumn, new Random(), _currentMode, selectedSuit: _currentSuit),
-                            SolvabilityStatus.Unknown);
+                        generated = DeckFactory.Deal(_faceDownPerColumn, new Random(), _currentMode, selectedSuit: _currentSuit);
                     }
                     _dealGenerationTask = null;
                     ApplyGeneratedDeal(generated);
@@ -110,7 +106,49 @@ public partial class Game1
                 break;
         }
 
+        UpdateDealAudioPlayback();
         _previousMouseState = mouseState; _previousKeyboardState = kState; base.Update(gameTime);
+    }
+
+    private void UpdateDealAudioPlayback()
+    {
+        SoundEffectInstance? instance = _dealDistSoundInstance;
+        if (instance == null)
+            return;
+
+        bool shouldPlay = IsActive
+            && _currentScreen == GameScreen.Playing
+            && _isGameActive
+            && !_showTutorial
+            && _gameState != null
+            && !_gameState.IsWon;
+
+        bool shouldPause = !IsActive
+            || _currentScreen == GameScreen.Paused
+            || (_currentScreen == GameScreen.Settings && _returnScreen == GameScreen.Paused);
+
+        if (shouldPlay)
+        {
+            if (instance.State == SoundState.Paused)
+            {
+                instance.Resume();
+            }
+            else if (!_dealDistSoundStarted)
+            {
+                // Play exactly once per session. A completed one-shot must not restart.
+                instance.Play();
+                _dealDistSoundStarted = true;
+            }
+        }
+        else if (shouldPause)
+        {
+            if (instance.State == SoundState.Playing)
+                instance.Pause();
+        }
+        else if (instance.State != SoundState.Stopped)
+        {
+            instance.Stop();
+        }
     }
 
     private void UpdateParticles(float dt) { for (int i = _particles.Count - 1; i >= 0; i--) { var p = _particles[i]; p.Position += p.Velocity * dt; p.Velocity.Y += 500f * dt; p.Life -= dt; if (p.Life <= 0) _particles.RemoveAt(i); } }
@@ -140,8 +178,10 @@ public partial class Game1
                     _gameTimeSeconds = 0;
                     _isGameActive = false;
                     _stuckSoundPlayed = true;
-                    UpdateStats(false);
+                    SaveManager.DeleteSave();
+                    UpdateContinueButton();
                     SaveManager.Settings.CurrentGameTime = 0;
+                    SaveManager.SaveSettings();
                 }
             } else {
                 _gameTimeSeconds += deltaTime;
@@ -173,8 +213,12 @@ public partial class Game1
             if (!_winHandled) {
                 _winHandled = true;
                 _winSound.Play();
-                UpdateStats(true);
+                UpdateStats();
                 SaveManager.Settings.CurrentGameTime = 0;
+                // A completed game must not leave its previous in-progress
+                // checkpoint behind; otherwise Continue can resurrect it.
+                SaveManager.DeleteSave();
+                UpdateContinueButton();
                 _winConfettiTimer = 0;
                 CheckAchievements();
             }
@@ -183,10 +227,25 @@ public partial class Game1
             _btnWinMenu.Update(mouseState, _previousMouseState, _clickSound, _hoverButtonSound);
             return;
         } else if (isStuck) {
-            if (!_stuckSoundPlayed) { _stuckSound.Play(); _stuckSoundPlayed = true; _isGameActive = false; UpdateStats(false); SaveManager.Settings.CurrentGameTime = 0; }
             bool timeExpired = _gameState.Mode == GameMode.Blitz && _gameTimeSeconds <= 0;
-            LayoutStuckButtons(timeExpired);
-            if (!timeExpired)
+            if (!_stuckSoundPlayed)
+            {
+                _stuckSound.Play();
+                _stuckSoundPlayed = true;
+                _isGameActive = false;
+                // A normal stuck position is recoverable while Undo is available.
+                // Keep its checkpoint until the player abandons it.
+                if (timeExpired || _undoStack.Count == 0)
+                {
+                    SaveManager.DeleteSave();
+                    UpdateContinueButton();
+                    SaveManager.Settings.CurrentGameTime = 0;
+                    SaveManager.SaveSettings();
+                }
+            }
+            bool canUndo = !timeExpired && _undoStack.Count > 0;
+            LayoutStuckButtons(!canUndo);
+            if (canUndo)
                 _btnStuckUndo.Update(mouseState, _previousMouseState, _clickSound, _hoverButtonSound);
             _btnStuckRestart.Update(mouseState, _previousMouseState, _clickSound, _hoverButtonSound);
             _btnStuckMenu.Update(mouseState, _previousMouseState, _clickSound, _hoverButtonSound);
@@ -290,39 +349,18 @@ public partial class Game1
         }
     }
 
-    // Достижение «Идеальный порядок» доступно в режимах на 2, 3 и 4 масти.
-    private static bool IsPerfectOrderEligibleSuitCount(int suitCount)
-        => suitCount >= 2 && suitCount <= 4;
-
-    // Проверяет именно ручное действие игрока по исходному состоянию поля.
-    // Перемещение на пустую колонку не считается наложением одной масти на другую.
-    private static bool IsCrossSuitPlacement(GameState state, int fromColumn, int fromIndex, int toColumn)
-    {
-        var sourcePile = state.Tableau[fromColumn];
-        var targetPile = state.Tableau[toColumn];
-        if (targetPile.IsEmpty || fromIndex < 0 || fromIndex >= sourcePile.Count)
-            return false;
-
-        return sourcePile.Cards[fromIndex].Suit != targetPile.TopCard.Suit;
-    }
-
     private void TryAutoMove()
     {
         var pile = _gameState.Tableau[_dragFromColumn];
         var card = pile.Cards[_dragFromIndex];
         int bestCol = -1;
-        int bestScore = int.MinValue;
         
         for (int col = 0; col < 10; col++) {
             if (col == _dragFromColumn) continue;
             var targetPile = _gameState.Tableau[col];
             if (!targetPile.IsEmpty && GameRules.CanPlaceOn(card, targetPile.TopCard)) {
-                int score = 0;
-                if (targetPile.TopCard.Suit == card.Suit) score += 100;
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestCol = col;
-                }
+                bestCol = col;
+                break;
             }
         }
         
@@ -342,13 +380,9 @@ public partial class Game1
             int prevTotalCompleted = _gameState.TotalCompletedSequences;
             int prevEndlessLoops = _gameState.EndlessLoops;
             int cardsMoved = GameRules.GetSequenceEnd(stateBefore.Tableau[_dragFromColumn], _dragFromIndex) - _dragFromIndex + 1;
-            bool crossSuitPlacement = IsCrossSuitPlacement(stateBefore, _dragFromColumn, _dragFromIndex, bestCol);
             bool success = GameEngine.TryMove(_gameState, _dragFromColumn, _dragFromIndex, bestCol);
             if (success) {
                 ClearHintState();
-                if (IsPerfectOrderEligibleSuitCount(_gameState.SuitCount) && crossSuitPlacement)
-                    _mixedSuitPlacementUsedThisGame = true;
-
                 _undoStack.Add(stateBefore);
                 if (_undoStack.Count > 30) _undoStack.RemoveAt(0);
                 
@@ -389,18 +423,26 @@ public partial class Game1
         }
     }
 
-    private void UpdateStats(bool won) { 
-        if (won) {
-            SaveManager.Settings.Wins++; 
-            SaveManager.AddScore(_gameState.Mode, _gameState.Mode == GameMode.Blitz ? (180 - _gameTimeSeconds) : _gameTimeSeconds);
-        } else {
-            SaveManager.Settings.Losses++; 
-        }
-        int diff = _currentDifficulty; 
-        if (diff == 0) { if (SaveManager.Settings.BestTimeEasy == 0 || _gameTimeSeconds < SaveManager.Settings.BestTimeEasy) SaveManager.Settings.BestTimeEasy = _gameTimeSeconds; } 
-        if (diff == 1) { if (SaveManager.Settings.BestTimeMedium == 0 || _gameTimeSeconds < SaveManager.Settings.BestTimeMedium) SaveManager.Settings.BestTimeMedium = _gameTimeSeconds; } 
-        if (diff == 2) { if (SaveManager.Settings.BestTimeHard == 0 || _gameTimeSeconds < SaveManager.Settings.BestTimeHard) SaveManager.Settings.BestTimeHard = _gameTimeSeconds; } 
-        SaveManager.SaveSettings(); 
+    private void UpdateStats()
+    {
+        SaveManager.Settings.Wins++;
+        double timeTaken = _gameState.Mode == GameMode.Blitz
+            ? Math.Max(0.0, 180.0 - _gameTimeSeconds)
+            : Math.Max(0.0, _gameTimeSeconds);
+        SaveManager.AddScore(_gameState.Mode, timeTaken);
+
+        // Best-time records represent successful completions only. In
+        // Blitz the timer counts down, so compare elapsed rather than
+        // remaining time.
+        int diff = _currentDifficulty;
+        if (diff == 0 && (SaveManager.Settings.BestTimeEasy == 0 || timeTaken < SaveManager.Settings.BestTimeEasy))
+            SaveManager.Settings.BestTimeEasy = timeTaken;
+        if (diff == 1 && (SaveManager.Settings.BestTimeMedium == 0 || timeTaken < SaveManager.Settings.BestTimeMedium))
+            SaveManager.Settings.BestTimeMedium = timeTaken;
+        if (diff == 2 && (SaveManager.Settings.BestTimeHard == 0 || timeTaken < SaveManager.Settings.BestTimeHard))
+            SaveManager.Settings.BestTimeHard = timeTaken;
+
+        SaveManager.SaveSettings();
     }
 
     private void CheckFlips(GameState stateBefore) { for (int col = 0; col < 10; col++) { int oldCount = stateBefore.Tableau[col].FaceDownCount; int newCount = _gameState.Tableau[col].FaceDownCount; if (newCount < oldCount && _gameState.Tableau[col].Count > 0) _flipAnims.Add(new FlipAnimation { Col = col, Index = newCount, Time = 0 }); } }

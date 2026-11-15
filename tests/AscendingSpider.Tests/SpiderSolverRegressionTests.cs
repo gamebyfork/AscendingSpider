@@ -1,4 +1,4 @@
-using AscendingSpider.Domain;
+﻿using AscendingSpider.Domain;
 using AscendingSpider.Solver;
 
 namespace AscendingSpider.Tests;
@@ -8,7 +8,7 @@ public sealed class SpiderSolverRegressionTests
     [Fact]
     public void SolverFindsAscendingAceToKingTableauWin()
     {
-        var state = new GameState(1)
+        var state = new GameState()
         {
             CompletedSequences = 7,
             TotalCompletedSequences = 7
@@ -32,7 +32,7 @@ public sealed class SpiderSolverRegressionTests
     [Fact]
     public void WinningHintCanRecommendStockDealWhenItCompletesAceToKing()
     {
-        var state = new GameState(1)
+        var state = new GameState()
         {
             CompletedSequences = 7,
             TotalCompletedSequences = 7

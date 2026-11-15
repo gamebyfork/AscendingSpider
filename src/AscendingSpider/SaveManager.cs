@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using AscendingSpider.Domain;
 
@@ -15,7 +16,6 @@ public class SaveSettings
     public int CardBack { get; set; } = 0;
     
     public int Wins { get; set; } = 0;
-    public int Losses { get; set; } = 0;
     public double BestTimeEasy { get; set; } = 0;
     public double BestTimeMedium { get; set; } = 0;
     public double BestTimeHard { get; set; } = 0;
@@ -27,10 +27,8 @@ public class SaveSettings
     public bool AchNoUndo { get; set; } = false;
     public bool AchNoHint { get; set; } = false;
     public bool AchSpeedrun { get; set; } = false;
-    public bool Ach4Suits { get; set; } = false;
     public bool AchHardMode { get; set; } = false;
     public bool AchDedicated { get; set; } = false;
-    public bool AchPerfectOrder { get; set; } = false;
 
     public List<double> LeaderboardStandard { get; set; } = new();
     public List<double> LeaderboardBlitz { get; set; } = new();
@@ -72,33 +70,33 @@ public static class SaveManager
     public static void Save(
         GameState state,
         int faceDownPerColumn,
-        bool mixedSuitPlacementUsed = false,
-        double? currentGameTime = null)
+        double? currentGameTime = null,
+        bool usedUndoThisGame = false,
+        bool usedHintThisGame = false)
     {
         if (!Directory.Exists(SaveDir)) Directory.CreateDirectory(SaveDir);
 
         var data = new SaveData
         {
-            SuitCount = state.SuitCount,
+            SaveVersion = SaveData.CurrentVersion,
+            UsedUndoThisGame = usedUndoThisGame,
+            UsedHintThisGame = usedHintThisGame,
             SelectedSuit = (int)state.SelectedSuit,
             Mode = (int)state.Mode,
             EndlessLoops = state.EndlessLoops,
-            DealsMade = state.DealsMade,
             FaceDownPerColumn = faceDownPerColumn,
             CompletedSequences = state.CompletedSequences,
             TotalCompletedSequences = state.TotalCompletedSequences,
-            CompletedSequenceSuits = state.CompletedSequenceSuits.Select(suit => (int)suit).ToList(),
             NextCardId = state.NextCardId,
-            MixedSuitPlacementUsed = mixedSuitPlacementUsed,
             CurrentGameTime = currentGameTime,
-            Stock = state.Stock.Select(c => new CardDto { Suit = (int)c.Suit, Rank = (int)c.Rank, Id = c.Id }).ToList(),
+            Stock = state.Stock.Select(c => new CardDto { Rank = (int)c.Rank, Id = c.Id }).ToList(),
             Tableau = state.Tableau.Select(p => 
             {
                 var list = new List<CardDto>();
                 for (int i = 0; i < p.Count; i++)
                 {
                     var c = p.Cards[i];
-                    list.Add(new CardDto { Suit = (int)c.Suit, Rank = (int)c.Rank, Id = c.Id, IsFaceDown = i < p.FaceDownCount });
+                    list.Add(new CardDto { Rank = (int)c.Rank, Id = c.Id, IsFaceDown = i < p.FaceDownCount });
                 }
                 return list;
             }).ToList()
@@ -108,7 +106,8 @@ public static class SaveManager
         File.WriteAllText(ProgressPath, json);
     }
 
-    public static (GameState State, int FaceDownPerColumn, bool MixedSuitPlacementUsed, double? CurrentGameTime)? Load()
+    public static (GameState State, int FaceDownPerColumn,
+        double? CurrentGameTime, bool UsedUndoThisGame, bool UsedHintThisGame)? Load()
     {
         if (!HasSave()) return null;
 
@@ -121,23 +120,31 @@ public static class SaveManager
             Suit selectedSuit = Enum.IsDefined(typeof(Suit), data.SelectedSuit ?? (int)Suit.Spades)
                 ? (Suit)(data.SelectedSuit ?? (int)Suit.Spades)
                 : Suit.Spades;
-            var state = new GameState(1, (GameMode)data.Mode, selectedSuit: selectedSuit);
-            state.CompletedSequences = data.CompletedSequences;
-            // Preserve the selected single suit for completed sequences.
-            for (int i = 0; i < Math.Max(0, data.CompletedSequences); i++)
-                state.CompletedSequenceSuits.Add(selectedSuit);
+            GameMode mode = Enum.IsDefined(typeof(GameMode), data.Mode)
+                ? (GameMode)data.Mode
+                : GameMode.Standard;
+            var state = new GameState(mode, selectedSuit);
+            state.CompletedSequences = Math.Max(0, data.CompletedSequences);
+            // The current game uses one selected suit.
             state.EndlessLoops = data.EndlessLoops;
-            state.DealsMade = data.DealsMade;
-            state.FaceDownPerColumn = data.FaceDownPerColumn switch
-            {
-                2 => 2, // previous two-suit Easy
-                3 => 2, // previous one-suit Easy
-                4 => 5, // previous two-suit Hard
-                5 => 3, // previous one-suit Medium
-                7 => 5, // previous one-suit Hard
-                _ => 3
-            };
+            // Current one-suit saves use 2/3/5 hidden cards. Preserve these
+            // values for current and unversioned one-suit saves; older layouts
+            // retain their difficulty migration.
+            state.FaceDownPerColumn = data.SaveVersion >= 1
+                || (data.SuitCount <= 1 && (data.FaceDownPerColumn is 2 or 3 or 5))
+                ? (data.FaceDownPerColumn is 2 or 3 or 5 ? data.FaceDownPerColumn : 3)
+                : data.FaceDownPerColumn switch
+                {
+                    2 => 2, // previous two-suit Easy
+                    3 => 2, // previous one-suit Easy
+                    4 => 5, // previous two-suit Hard
+                    5 => 3, // previous one-suit Medium
+                    7 => 5, // previous one-suit Hard
+                    _ => 3
+                };
 
+            // Normalize all cards from legacy multi-suit saves to the selected
+            // suit so old checkpoints obey the current single-suit rules.
             foreach (var c in data.Stock ?? new List<CardDto>())
                 state.Stock.Add(new Card(selectedSuit, (Rank)c.Rank, c.Id));
 
@@ -164,11 +171,12 @@ public static class SaveManager
                 ? data.NextCardId
                 : maxActiveCardId + 1;
 
-            // Если это сохранение создано до появления трекера, мы не можем
-            // восстановить историю перемещений. Консервативно запрещаем достижение
-            // в этой старой партии, чтобы его нельзя было получить нечестно.
-            bool mixedSuitPlacementUsed = data.MixedSuitPlacementUsed ?? true;
-            return (state, state.FaceDownPerColumn, mixedSuitPlacementUsed, data.CurrentGameTime);
+            // Older saves cannot prove that no undo/hint was used. Disqualify
+            // those legacy sessions rather than granting achievements unfairly.
+            bool usedUndoThisGame = data.UsedUndoThisGame ?? true;
+            bool usedHintThisGame = data.UsedHintThisGame ?? true;
+            return (state, state.FaceDownPerColumn,
+                data.CurrentGameTime, usedUndoThisGame, usedHintThisGame);
         }
         catch { return null; }
     }
@@ -197,18 +205,21 @@ public static class SaveManager
 
 public class SaveData
 {
+    public const int CurrentVersion = 2;
+
+    public int SaveVersion { get; set; } = 0;
+    // Read-only compatibility field for difficulty migration from old saves.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int SuitCount { get; set; }
+    public bool? UsedUndoThisGame { get; set; }
+    public bool? UsedHintThisGame { get; set; }
     public int? SelectedSuit { get; set; }
     public int Mode { get; set; }
     public int EndlessLoops { get; set; }
-    public int DealsMade { get; set; }
     public int FaceDownPerColumn { get; set; }
     public int CompletedSequences { get; set; }
     public int TotalCompletedSequences { get; set; }
-    public List<int>? CompletedSequenceSuits { get; set; }
     public int NextCardId { get; set; }
-    // Nullable for backward compatibility: null means an older save without history.
-    public bool? MixedSuitPlacementUsed { get; set; }
     // Nullable for backward compatibility with saves created before Blitz timer persistence.
     public double? CurrentGameTime { get; set; }
     public List<CardDto> Stock { get; set; } = new();
@@ -217,7 +228,6 @@ public class SaveData
 
 public class CardDto
 {
-    public int Suit { get; set; }
     public int Rank { get; set; }
     public int Id { get; set; }
     public bool IsFaceDown { get; set; }

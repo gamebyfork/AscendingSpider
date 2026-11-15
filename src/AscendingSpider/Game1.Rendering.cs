@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 #nullable enable
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +11,6 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
@@ -483,31 +482,30 @@ public partial class Game1
             ("AchNoUndo", "AchNoUndoDesc", SaveManager.Settings.AchNoUndo),
             ("AchNoHint", "AchNoHintDesc", SaveManager.Settings.AchNoHint),
             ("AchSpeedrun", "AchSpeedrunDesc", SaveManager.Settings.AchSpeedrun),
-            ("Ach4Suits", "Ach4SuitsDesc", SaveManager.Settings.Ach4Suits),
             ("AchHardMode", "AchHardModeDesc", SaveManager.Settings.AchHardMode),
             ("AchDedicated", "AchDedicatedDesc", SaveManager.Settings.AchDedicated),
-            ("AchPerfectOrder", "AchPerfectOrderDesc", SaveManager.Settings.AchPerfectOrder)
         };
-        int startY = 170;
-        int rowHeight = 70;
+        int startY = 158;
+        const int rowHeight = 103;
         foreach (var (nameKey, descKey, unlocked) in achievements)
         {
-            Rectangle row = new Rectangle(345, startY, 810, 58);
+            Rectangle row = new Rectangle(345, startY, 810, 91);
             _spriteBatch.Draw(_pixel, row, palette.Table * 0.36f);
-            _spriteBatch.Draw(_pixel, new Rectangle(row.X, row.Y, 3, row.Height), unlocked ? palette.Accent : Color.Gray * 0.65f);
-            Rectangle iconRect = new Rectangle(365, startY + 9, 40, 40);
+            _spriteBatch.Draw(_pixel, new Rectangle(row.X, row.Y, 4, row.Height), unlocked ? palette.Accent : Color.Gray * 0.65f);
+            Rectangle iconRect = new Rectangle(365, startY + 21, 48, 48);
             _spriteBatch.Draw(_pixel, iconRect, unlocked ? palette.Button : new Color(65, 67, 65));
-            if (unlocked) _spriteBatch.Draw(_starTexture, new Rectangle(iconRect.X + 5, iconRect.Y + 5, 30, 30), palette.Accent);
+            if (unlocked) _spriteBatch.Draw(_starTexture, new Rectangle(iconRect.X + 7, iconRect.Y + 7, 34, 34), palette.Accent);
             else
             {
                 string icon = "?";
                 Vector2 iconSize = _font.MeasureString(icon) * _fontScale;
-                _spriteBatch.DrawString(_font, icon, new Vector2(iconRect.X + (40 - iconSize.X) / 2, iconRect.Y + (40 - iconSize.Y) / 2), new Color(145, 145, 140), 0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
+                _spriteBatch.DrawString(_font, icon, new Vector2(iconRect.X + (48 - iconSize.X) / 2, iconRect.Y + (48 - iconSize.Y) / 2), new Color(145, 145, 140), 0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
             }
             Color nameColor = unlocked ? new Color(245, 220, 160) : new Color(155, 155, 148);
-            Color descColor = unlocked ? new Color(239, 236, 222) : new Color(125, 125, 120);
-            _spriteBatch.DrawString(_font, Localization.Get(nameKey), new Vector2(430, startY + 2), nameColor, 0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
-            _spriteBatch.DrawString(_font, Localization.Get(descKey), new Vector2(430, startY + 29), descColor, 0f, Vector2.Zero, _fontScale * 0.72f, SpriteEffects.None, 0f);
+            Color descColor = unlocked ? new Color(239, 236, 222) : new Color(145, 145, 138);
+            _spriteBatch.DrawString(_font, Localization.Get(nameKey), new Vector2(440, startY + 16), nameColor, 0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
+            _spriteBatch.Draw(_pixel, new Rectangle(440, startY + 48, 660, 1), palette.Accent * 0.22f);
+            _spriteBatch.DrawString(_font, Localization.Get(descKey), new Vector2(440, startY + 59), descColor, 0f, Vector2.Zero, _fontScale * 0.72f, SpriteEffects.None, 0f);
             startY += rowHeight;
         }
         _btnBackAchievements.Draw(_spriteBatch, _pixel, _font, _fontItalic, mouse);
@@ -517,10 +515,10 @@ public partial class Game1
     private void DrawCenteredTextRaw(string text, int y, Color color, float scale = 1f) { Vector2 size = _font.MeasureString(text) * (_fontScale * scale); _spriteBatch.DrawString(_font, text, new Vector2((1500 - size.X) / 2, y), color, 0f, Vector2.Zero, _fontScale * scale, SpriteEffects.None, 0f); }
     private string FormatTime(double seconds) { if (seconds <= 0 && _gameState?.Mode != GameMode.Blitz) return "--:--"; int m = (int)(seconds / 60); int s = (int)(seconds % 60); return $"{m:00}:{s:00}"; }
 
-    private void LayoutStuckButtons(bool timeExpired)
+    private void LayoutStuckButtons(bool hideUndoButton)
     {
         _btnStuckUndo.Rect = new Rectangle(500, 560, 225, 68);
-        _btnStuckRestart.Rect = timeExpired
+        _btnStuckRestart.Rect = hideUndoButton
             ? new Rectangle(625, 560, 250, 68)
             : new Rectangle(775, 560, 225, 68);
         _btnStuckMenu.Rect = new Rectangle(625, 660, 250, 68);
@@ -555,11 +553,11 @@ public partial class Game1
             .Where(animation => animation.IsCollecting && animation.CollectSequenceIndex >= 0)
             .Select(animation => animation.CollectSequenceIndex)
             .ToHashSet();
-        int completedToDraw = Math.Min(8, _gameState.CompletedSequenceSuits.Count);
+        int completedToDraw = Math.Min(8, _gameState.CompletedSequences);
         for (int i = 0; i < completedToDraw; i++)
         {
             if (collectingSequenceIndexes.Contains(i)) continue;
-            DrawCard(new Card(_gameState.CompletedSequenceSuits[i], Rank.Ace),
+            DrawCard(new Card(_gameState.SelectedSuit, Rank.Ace),
                 CollectedX + (i * 18), CollectedY, false, 1.0f);
         }
         
@@ -622,7 +620,7 @@ public partial class Game1
             for (int i = _dragFromIndex; i <= endIndex; i++) { DrawCard(pile.Cards[i], currentX, currentY, false, 1.0f, true, 0f, false, gameTime); currentY += GetFaceUpOffset(_gameState, _dragFromColumn); }
         }
         
-        DrawLuaStyleHint();
+        DrawHintOverlay();
 
         bool isStuck = IsGameStuck();
         if (_gameState.IsWon && _animations.Count == 0)
@@ -640,10 +638,11 @@ public partial class Game1
             _spriteBatch.Draw(_pixel, new Rectangle(0, 0, 1500, 1000), new Color(0, 0, 0, 184));
             DrawPanel(new Rectangle(440, 300, 620, 500), hudPalette.Panel, hudPalette.Accent, 0.98f);
             bool timeExpired = _gameState.Mode == GameMode.Blitz && _gameTimeSeconds <= 0;
-            LayoutStuckButtons(timeExpired);
+            bool canUndo = !timeExpired && _undoStack.Count > 0;
+            LayoutStuckButtons(!canUndo);
             string stuckText = timeExpired ? "TimeUp" : "Stuck";
             DrawCenteredText(stuckText, 385, GetThemePalette().IsDark ? Color.IndianRed : Color.Red, 1.05f);
-            if (!timeExpired)
+            if (canUndo)
                 _btnStuckUndo.Draw(_spriteBatch, _pixel, _font, _fontItalic, mouse);
             _btnStuckRestart.Draw(_spriteBatch, _pixel, _font, _fontItalic, mouse);
             _btnStuckMenu.Draw(_spriteBatch, _pixel, _font, _fontItalic, mouse); 

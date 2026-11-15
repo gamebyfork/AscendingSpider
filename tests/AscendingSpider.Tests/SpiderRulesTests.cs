@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using AscendingSpider.Domain;
 using Xunit;
@@ -9,14 +9,13 @@ namespace AscendingSpider.Tests;
 /// Regression tests for the current AscendingSpider rules:
 /// one Spades suit and ascending Ace-to-King sequences.
 /// </summary>
-public sealed class SpiderClassicRulesTests
+public sealed class SpiderRulesTests
 {
     [Fact]
     public void DealMatchesStandardSpiderOpeningLayout()
     {
-        GameState state = DeckFactory.Deal(1, 5, new Random(12345));
+        GameState state = DeckFactory.Deal(5, new Random(12345));
 
-        Assert.Equal(1, state.SuitCount);
         Assert.Equal(10, state.Tableau.Count);
 
         for (int column = 0; column < 4; column++)
@@ -55,14 +54,28 @@ public sealed class SpiderClassicRulesTests
         pile.AddFaceUp(new Card(Suit.Spades, Rank.Two));
         pile.AddFaceUp(new Card(Suit.Spades, Rank.Three));
 
-        Assert.True(GameRules.CanPickUp(pile, 0, SpiderRuleset.Classic));
-        Assert.Equal(2, GameRules.GetSequenceEnd(pile, 0, SpiderRuleset.Classic));
+        Assert.True(GameRules.CanPickUp(pile, 0));
+        Assert.Equal(2, GameRules.GetSequenceEnd(pile, 0));
+    }
+
+    [Fact]
+    public void MixedSuitRunCannotBePickedUp()
+    {
+        GameState state = new GameState();
+        state.Tableau[0].AddFaceUp(new Card(Suit.Spades, Rank.Five));
+        state.Tableau[0].AddFaceUp(new Card(Suit.Hearts, Rank.Six));
+        state.Tableau[0].AddFaceUp(new Card(Suit.Clubs, Rank.Seven));
+        state.Tableau[1].AddFaceUp(new Card(Suit.Diamonds, Rank.Four));
+
+        Assert.False(GameRules.CanPickUp(state.Tableau[0], 0));
+        Assert.DoesNotContain(new Move(0, 0, 1), GameEngine.EnumerateMoves(state));
+        Assert.False(GameEngine.TryMove(state, 0, 0, 1));
     }
 
     [Fact]
     public void StockDealAddsOneFaceUpCardToEachColumn()
     {
-        GameState state = DeckFactory.Deal(1, 5, new Random(54321));
+        GameState state = DeckFactory.Deal(5, new Random(54321));
         int[] oldCounts = state.Tableau.Select(pile => pile.Count).ToArray();
 
         Assert.True(GameEngine.TryDealFromStock(state));
@@ -71,7 +84,31 @@ public sealed class SpiderClassicRulesTests
             Assert.Equal(oldCounts[column] + 1, state.Tableau[column].Count);
 
         Assert.Equal(40, state.Stock.Count);
-        Assert.Equal(1, state.DealsMade);
+    }
+
+    [Fact]
+    public void EndlessStartsANewSingleSuitRoundAfterEightSequences()
+    {
+        var state = new GameState(GameMode.Endless, Suit.Hearts)
+        {
+            CompletedSequences = 7,
+            TotalCompletedSequences = 7
+        };
+
+        for (int rank = 1; rank <= 12; rank++)
+            state.Tableau[0].AddFaceUp(new Card(Suit.Hearts, (Rank)rank, rank));
+        state.Tableau[1].AddFaceUp(new Card(Suit.Hearts, Rank.King, 13));
+
+        Assert.True(GameEngine.TryMove(state, 1, 0, 0));
+
+        Assert.Equal(0, state.CompletedSequences);
+        Assert.Equal(8, state.TotalCompletedSequences);
+        Assert.Equal(1, state.EndlessLoops);
+        Assert.Equal(54, state.Tableau.Sum(pile => pile.Count));
+        Assert.Equal(50, state.Stock.Count);
+        Assert.All(
+            state.Tableau.SelectMany(pile => pile.Cards).Concat(state.Stock),
+            card => Assert.Equal(Suit.Hearts, card.Suit));
     }
 
     [Fact]

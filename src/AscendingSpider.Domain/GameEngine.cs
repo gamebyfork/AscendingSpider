@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text;
@@ -19,19 +19,8 @@ public readonly record struct CollectedSequence(int Column, Suit Suit);
 
 public static class GameEngine
 {
-    // Deal generation may run several solvers in parallel. Keep this UI event
-    // value thread-local so a background solver cannot overwrite the game thread's
-    // last collected column.
-    [ThreadStatic]
-    private static int _lastCollectedColumn = -1;
     [ThreadStatic]
     private static List<CollectedSequence>? _lastCollectedSequences;
-
-    public static int LastCollectedColumn
-    {
-        get => _lastCollectedColumn;
-        private set => _lastCollectedColumn = value;
-    }
 
     // All sequences collected by the most recent player action. More than one
     // sequence can be completed during a stock deal, so preserve every event.
@@ -40,7 +29,6 @@ public static class GameEngine
 
     private static void ClearLastCollectedSequences()
     {
-        LastCollectedColumn = -1;
         _lastCollectedSequences?.Clear();
     }
 
@@ -56,12 +44,12 @@ public static class GameEngine
         var from = state.Tableau[fromColumn];
         var to = state.Tableau[toColumn];
 
-        if (!GameRules.CanPickUp(from, fromIndex, state.Ruleset)) return false;
+        if (!GameRules.CanPickUp(from, fromIndex)) return false;
 
         var movingCard = from.Cards[fromIndex];
         if (!to.IsEmpty && !GameRules.CanPlaceOn(movingCard, to.TopCard)) return false;
 
-        int endIndex = GameRules.GetSequenceEnd(from, fromIndex, state.Ruleset);
+        int endIndex = GameRules.GetSequenceEnd(from, fromIndex);
         int count = endIndex - fromIndex + 1;
         var cardsToMove = from.Cards.Skip(fromIndex).Take(count).ToList();
 
@@ -90,7 +78,6 @@ public static class GameEngine
         // Spider rules do not allow a stock deal while any tableau column is empty.
         if (!CanDealFromStock(state)) return false;
 
-        state.DealsMade++;
 
         int previousEndlessLoops = state.EndlessLoops;
         for (int col = 0; col < 10; col++)
@@ -134,7 +121,7 @@ public static class GameEngine
     /// cannot advance the game.
     ///
     /// Unknown means the search reached its safety limit; callers must not
-    /// treat an inconclusive search as a loss.
+    /// treat an inconclusive search as a dead end.
     /// </summary>
     public static ProgressReachability CheckReachableProgress(
         GameState initialState,
@@ -236,8 +223,6 @@ public static class GameEngine
 
         var key = new StringBuilder(2048);
         key.Append((int)state.Mode).Append('|')
-           .Append((int)state.Ruleset).Append('|')
-           .Append(state.SuitCount).Append('|')
            .Append(state.CompletedSequences).Append('|')
            .Append(state.TotalCompletedSequences).Append('|');
 
@@ -285,7 +270,7 @@ public static class GameEngine
 
             for (int start = from.FaceDownCount; start < from.Count; start++)
             {
-                if (!GameRules.CanPickUp(from, start, state.Ruleset)) continue;
+                if (!GameRules.CanPickUp(from, start)) continue;
                 var card = from.Cards[start];
 
                 for (int toCol = 0; toCol < 10; toCol++)
@@ -312,8 +297,6 @@ public static class GameEngine
 
         state.CompletedSequences++;
         state.TotalCompletedSequences++;
-        state.CompletedSequenceSuits.Add(collectedSuit);
-        LastCollectedColumn = column;
         (_lastCollectedSequences ??= new List<CollectedSequence>())
             .Add(new CollectedSequence(column, collectedSuit));
 
@@ -322,7 +305,6 @@ public static class GameEngine
         if (state.CompletedSequences >= 8 && state.Mode == GameMode.Endless)
         {
             state.CompletedSequences = 0;
-            state.CompletedSequenceSuits.Clear();
             state.EndlessLoops++;
             DeckFactory.DealFreshRound(state, new Random());
         }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -6,10 +6,9 @@ namespace AscendingSpider.Domain;
 
 public static class DeckFactory
 {
-    public static List<Card> CreateDeck(int suitCount, int firstCardId = 1, Suit selectedSuit = Suit.Spades)
+    public static List<Card> CreateDeck(int firstCardId = 1, Suit selectedSuit = Suit.Spades)
     {
         // Each game uses exactly one suit, selected in the New Game menu.
-        // Keep suitCount in the signature for compatibility with existing callers.
         var deck = new List<Card>(104);
         int nextId = firstCardId;
 
@@ -33,9 +32,9 @@ public static class DeckFactory
         }
     }
 
-    public static GameState Deal(int suitCount, int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard, SpiderRuleset ruleset = SpiderRuleset.Classic, Suit selectedSuit = Suit.Spades)
+    public static GameState Deal(int faceDownPerColumn, Random rng, GameMode mode = GameMode.Standard, Suit selectedSuit = Suit.Spades)
     {
-        var state = new GameState(suitCount, mode, ruleset, selectedSuit)
+        var state = new GameState(mode, selectedSuit)
         {
             FaceDownPerColumn = faceDownPerColumn
         };
@@ -50,7 +49,7 @@ public static class DeckFactory
     /// </summary>
     public static void DealFreshRound(GameState state, Random rng)
     {
-        var deck = CreateDeck(state.SuitCount, state.NextCardId, state.SelectedSuit);
+        var deck = CreateDeck(state.NextCardId, state.SelectedSuit);
         Shuffle(deck, rng);
         state.NextCardId = checked(state.NextCardId + deck.Count);
 

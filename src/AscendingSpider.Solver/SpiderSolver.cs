@@ -325,10 +325,8 @@ public sealed class SpiderSolver
         ref int statesChecked,
         ref int bestHeuristic)
     {
-        int beamWidth = initial.SuitCount >= 2 ? 1_600 : 900;
+        const int beamWidth = 900;
         int startingStatesChecked = statesChecked;
-        long order = 0;
-
         string initialHash = StateHash.GetHash(initial);
         int initialHeuristic = StateHeuristic.Calculate(initial);
         var frontier = new List<Node>
@@ -493,19 +491,8 @@ public sealed class SpiderSolver
         if (state.IsWon || cancellationToken.IsCancellationRequested)
             return NoHint(0);
 
-        int stateBudget = state.SuitCount switch
-        {
-            1 => 600_000,
-            2 => 1_500_000,
-            _ => 300_000
-        };
-
-        int timeBudgetMs = state.SuitCount switch
-        {
-            1 => 20_000,
-            2 => 30_000,
-            _ => 15_000
-        };
+        const int stateBudget = 600_000;
+        const int timeBudgetMs = 20_000;
 
         // Stock deals are part of the legal move graph in standard Spider.
         // Omitting them would search a restricted subproblem rather than the game.
@@ -678,22 +665,12 @@ public sealed class SpiderSolver
         if (state.IsWon || cancellationToken.IsCancellationRequested)
             return NoHint(0);
 
-        int verificationBudget = state.SuitCount switch
-        {
-            1 => 800_000,
-            2 => 1_200_000,
-            _ => 300_000
-        };
+        const int verificationBudget = 800_000;
 
         // FindBestHint is called on a worker thread. These are maximum search
         // windows, not a promise that every position can be solved in time.
         // A hint is returned only when SolveDetailed proves a complete path.
-        int timeBudgetMs = state.SuitCount switch
-        {
-            1 => 15_000,
-            2 => 25_000,
-            _ => 15_000
-        };
+        const int timeBudgetMs = 15_000;
 
         SolverSearchResult proof = SolveDetailed(
             state,
@@ -866,8 +843,10 @@ public sealed class SpiderSolver
                 candidate.ReversePenalty,
                 initialScore);
 
-            if (!rootsByHash.TryGetValue(candidate.Hash, out HintRoot existing)
-                || root.InitialScore < existing.InitialScore)
+            if (!rootsByHash.TryGetValue(candidate.Hash, out HintRoot? existing)
+                || existing is null
+                || existing is null
+                    || root.InitialScore < existing.InitialScore)
             {
                 rootsByHash[candidate.Hash] = root;
             }
@@ -894,7 +873,7 @@ public sealed class SpiderSolver
                     0,
                     score);
 
-                if (!rootsByHash.TryGetValue(hash, out HintRoot existing)
+                if (!rootsByHash.TryGetValue(hash, out HintRoot? existing)
                     || root.InitialScore < existing.InitialScore)
                 {
                     rootsByHash[hash] = root;
@@ -998,8 +977,10 @@ public sealed class SpiderSolver
                         int heuristic = StateHeuristic.Calculate(next);
                         var candidate = new HintNode(next, hash, depth, heuristic);
 
-                        if (!nextByHash.TryGetValue(hash, out HintNode existing)
-                            || candidate.Heuristic < existing.Heuristic)
+                        if (!nextByHash.TryGetValue(hash, out HintNode? existing)
+                            || existing is null
+                            || existing is null
+                                    || candidate.Heuristic < existing.Heuristic)
                         {
                             nextByHash[hash] = candidate;
                         }
@@ -1020,7 +1001,7 @@ public sealed class SpiderSolver
                                 int heuristic = StateHeuristic.Calculate(next);
                                 var candidate = new HintNode(next, hash, depth, heuristic);
 
-                                if (!nextByHash.TryGetValue(hash, out HintNode existing)
+                                if (!nextByHash.TryGetValue(hash, out HintNode? existing)
                                     || candidate.Heuristic < existing.Heuristic)
                                 {
                                     nextByHash[hash] = candidate;

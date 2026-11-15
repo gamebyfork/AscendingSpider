@@ -1,4 +1,4 @@
-namespace AscendingSpider.Domain;
+﻿namespace AscendingSpider.Domain;
 
 /// <summary>
 /// Rules for AscendingSpider. Cards are stored bottom-to-top in a
@@ -12,12 +12,9 @@ public static class GameRules
 
     /// <summary>
     /// A card and the cards above it can be picked up together only when they
-    /// form an ascending run. In Classic mode the run must also be one suit.
+    /// form an ascending run of the selected suit.
     /// </summary>
-    public static bool CanPickUp(
-        Pile pile,
-        int startIndex,
-        SpiderRuleset ruleset = SpiderRuleset.Classic)
+    public static bool CanPickUp(Pile pile, int startIndex)
     {
         if (startIndex < 0 || startIndex >= pile.Count)
             return false;
@@ -25,17 +22,14 @@ public static class GameRules
         if (startIndex < pile.FaceDownCount)
             return false;
 
-        return GetSequenceEnd(pile, startIndex, ruleset) == pile.Count - 1;
+        return GetSequenceEnd(pile, startIndex) == pile.Count - 1;
     }
 
     /// <summary>
     /// Returns the final index of a valid ascending run beginning at
     /// <paramref name="startIndex"/>. Pile indices increase from bottom to top.
     /// </summary>
-    public static int GetSequenceEnd(
-        Pile pile,
-        int startIndex,
-        SpiderRuleset ruleset = SpiderRuleset.Classic)
+    public static int GetSequenceEnd(Pile pile, int startIndex)
     {
         if (startIndex < 0 || startIndex >= pile.Count)
             return startIndex;
@@ -49,9 +43,9 @@ public static class GameRules
             Card next = cards[endIndex + 1];
 
             bool ascendingRank = (int)next.Rank == (int)current.Rank + 1;
-            bool suitAllowed = ruleset == SpiderRuleset.Relaxed || current.Suit == next.Suit;
+            bool sameSuit = current.Suit == next.Suit;
 
-            if (!ascendingRank || !suitAllowed)
+            if (!ascendingRank || !sameSuit)
                 break;
 
             endIndex++;

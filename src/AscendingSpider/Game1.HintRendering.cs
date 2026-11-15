@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 #nullable enable
 using System.Collections.Generic;
 using System.Linq;
@@ -10,13 +10,12 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
 public partial class Game1
 {
-    private void DrawLuaStyleHint()
+    private void DrawHintOverlay()
     {
         if (_hintState == HintState.None || _hintTimer > 7f || _gameState == null)
             return;
@@ -71,8 +70,7 @@ public partial class Game1
         }
 
         // A translucent outline of the whole movable run glides from source to
-        // destination. This deliberately replaces the old arrow with Lua's
-        // soft, pulsing movement preview.
+        // destination, replacing the old arrow with a soft, pulsing preview.
         float progress = Math.Min((_hintTimer % 1.8f) / 1.1f, 1f);
         progress = progress * progress * (3f - 2f * progress);
         int ghostX = (int)MathF.Round(MathHelper.Lerp(sourceFirst.X, targetX, progress));

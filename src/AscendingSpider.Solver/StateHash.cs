@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using AscendingSpider.Domain;
 
 namespace AscendingSpider.Solver;
@@ -17,8 +17,6 @@ public static class StateHash
 
         var sb = new StringBuilder(1024);
         sb.Append((int)state.Mode).Append('|');
-        sb.Append((int)state.Ruleset).Append('|');
-        sb.Append(state.SuitCount).Append('|');
         sb.Append(state.CompletedSequences).Append('|');
 
         // The next card dealt is Stock[^1], therefore stock order matters.

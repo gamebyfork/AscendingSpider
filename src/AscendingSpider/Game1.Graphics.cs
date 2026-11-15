@@ -10,7 +10,6 @@ using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using AscendingSpider.Domain;
-using AscendingSpider.Solver;
 
 namespace AscendingSpider;
 
@@ -32,6 +31,9 @@ public partial class Game1
         try { _stuckSound = Content.Load<SoundEffect>("Sounds/audio_stuck"); } catch (ContentLoadException) { _stuckSound = _winSound; }
         try { _wrongSound = Content.Load<SoundEffect>("Sounds/audio_wrong"); } catch (ContentLoadException) { _wrongSound = _clickSound; }
         try { _dealDistSound = Content.Load<SoundEffect>("Sounds/audio_deal_dist"); } catch (ContentLoadException) { _dealDistSound = _cardMoveSound; }
+        _dealDistSoundInstance?.Dispose();
+        _dealDistSoundInstance = _dealDistSound.CreateInstance();
+        _dealDistSoundInstance.IsLooped = false;
 
         int textureWidth = CardWidth * TextureQualityScale;
         int textureHeight = CardHeight * TextureQualityScale;
@@ -170,7 +172,7 @@ public partial class Game1
     {
         return SaveManager.Settings.AchFirstWin || SaveManager.Settings.AchNoUndo || SaveManager.Settings.AchNoHint
             || SaveManager.Settings.AchSpeedrun || SaveManager.Settings.AchHardMode 
-            || SaveManager.Settings.AchDedicated || SaveManager.Settings.AchPerfectOrder;
+            || SaveManager.Settings.AchDedicated;
     }
 
     private void UpdateFonts()
@@ -285,22 +287,106 @@ public partial class Game1
         _spriteBatch.Draw(_cardShadow, shadowRect, Color.White * MathHelper.Clamp(opacity, 0f, 1f));
     }
 
+    private Texture2D CreateClassicCardBack()
+    {
+        int scale = TextureQualityScale;
+        int width = CardWidth * scale;
+        int height = CardHeight * scale;
+        var tex = new Texture2D(GraphicsDevice, width, height);
+        var data = new Color[width * height];
+        Color paper = new Color(246, 247, 242);
+        Color blue = new Color(42, 104, 166);
+        Color red = new Color(190, 55, 68);
+        Color border = new Color(30, 67, 105);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (!IsInsideRoundedRect(x, y, width, height, 10 * scale))
+            { data[y * width + x] = Color.Transparent; continue; }
+
+            int inset = 5 * scale;
+            bool frame = !IsInsideRoundedRect(x - inset, y - inset,
+                width - inset * 2, height - inset * 2, 7 * scale);
+            // Closely spaced diagonal bands alternate between traditional blue and red.
+            int stripeBand = ((x + y) / (5 * scale)) % 2;
+            Color stripeColor = stripeBand == 0 ? blue : red;
+            bool showStripe = ((x + y) % (10 * scale)) < (4 * scale);
+            Color fill = showStripe ? stripeColor : paper;
+            if (frame) fill = border;
+            data[y * width + x] = fill;
+        }
+        tex.SetData(data);
+        return tex;
+    }
+
+    private Texture2D CreateBurgundyCardBack(Color burgundy, Color accent)
+    {
+        int scale = TextureQualityScale;
+        int width = CardWidth * scale;
+        int height = CardHeight * scale;
+        var tex = new Texture2D(GraphicsDevice, width, height);
+        var data = new Color[width * height];
+        Color deep = MixColors(burgundy, new Color(36, 12, 25), 0.26f);
+        Color rose = MixColors(accent, new Color(205, 139, 151), 0.30f);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (!IsInsideRoundedRect(x, y, width, height, 10 * scale))
+            { data[y * width + x] = Color.Transparent; continue; }
+
+            int localX = x % (24 * scale);
+            int localY = y % (24 * scale);
+            int diamondDistance = Math.Abs(localX - 12 * scale) + Math.Abs(localY - 12 * scale);
+            bool diamond = Math.Abs(diamondDistance - 10 * scale) <= scale;
+            bool center = Math.Abs(localX - 12 * scale) <= scale
+                && Math.Abs(localY - 12 * scale) <= scale;
+            bool fineLine = (localX == 0 || localY == 0);
+            Color color = deep;
+            if (diamond || fineLine) color = MixColors(deep, rose, 0.72f);
+            if (center) color = MixColors(rose, Color.White, 0.16f);
+
+            bool innerFrame = !IsInsideRoundedRect(x - 7 * scale, y - 7 * scale,
+                width - 14 * scale, height - 14 * scale, 5 * scale);
+            if (innerFrame) color = MixColors(deep, rose, 0.58f);
+            data[y * width + x] = color;
+        }
+        tex.SetData(data);
+        return tex;
+    }
+
     private Texture2D CreateMinimalistCardBack(Color borderColor, Color faceColor)
     {
         int scale = TextureQualityScale;
         int width = CardWidth * scale;
         int height = CardHeight * scale;
         var tex = new Texture2D(GraphicsDevice, width, height);
-        Color[] data = new Color[width * height];
-
-        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
-            bool inside = IsInsideRoundedRect(x, y, width, height, 10 * scale);
-            if (!inside) { data[y * width + x] = Color.Transparent; continue; }
-            bool border = !IsInsideRoundedRect(x - 4 * scale, y - 4 * scale,
-                width - 8 * scale, height - 8 * scale, 6 * scale);
-            data[y * width + x] = border ? borderColor : faceColor;
+        var data = new Color[width * height];
+        Color line = MixColors(borderColor, faceColor, 0.48f);
+        float cx = width * 0.5f;
+        float cy = height * 0.5f;
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (!IsInsideRoundedRect(x, y, width, height, 10 * scale))
+            { data[y * width + x] = Color.Transparent; continue; }
+            bool outerFrame = !IsInsideRoundedRect(x - 5 * scale, y - 5 * scale,
+                width - 10 * scale, height - 10 * scale, 6 * scale);
+            bool innerFrame = !IsInsideRoundedRect(x - 10 * scale, y - 10 * scale,
+                width - 20 * scale, height - 20 * scale, 4 * scale);
+            int dx = Math.Abs(x - (int)cx);
+            int dy = Math.Abs(y - (int)cy);
+            bool centerDiamond = Math.Abs(dx - dy) <= scale * 2
+                && dx + dy < 17 * scale;
+            bool centerDot = dx <= 2 * scale && dy <= 2 * scale;
+            bool sideRule = (Math.Abs(x - 18 * scale) <= scale
+                || Math.Abs(x - (width - 18 * scale)) <= scale)
+                && y > 30 * scale && y < height - 30 * scale;
+            Color color = faceColor;
+            if (outerFrame || innerFrame || sideRule) color = line;
+            if (centerDiamond) color = MixColors(faceColor, borderColor, 0.62f);
+            if (centerDot) color = borderColor;
+            data[y * width + x] = color;
         }
-
         tex.SetData(data);
         return tex;
     }
@@ -313,9 +399,6 @@ public partial class Game1
         var tex = new Texture2D(GraphicsDevice, width, height);
         Color[] data = new Color[width * height];
         var rng = new Random(42);
-
-        // Generate stars on the logical-resolution grid and expand each sample
-        // into a scale x scale block. This keeps the original pattern density.
         for (int baseX = 0; baseX < CardWidth; baseX++)
         for (int baseY = 0; baseY < CardHeight; baseY++) {
             Color color = rng.Next(100) < 5 ? starColor : backgroundColor;
@@ -327,7 +410,6 @@ public partial class Game1
                 data[y * width + x] = inside ? color : Color.Transparent;
             }
         }
-
         tex.SetData(data);
         return tex;
     }
@@ -338,16 +420,30 @@ public partial class Game1
         int width = CardWidth * scale;
         int height = CardHeight * scale;
         var tex = new Texture2D(GraphicsDevice, width, height);
-        Color[] data = new Color[width * height];
-
-        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
-            bool inside = IsInsideRoundedRect(x, y, width, height, 10 * scale);
-            if (!inside) { data[y * width + x] = Color.Transparent; continue; }
-            bool inner = IsInsideRoundedRect(x - 6 * scale, y - 6 * scale,
-                width - 12 * scale, height - 12 * scale, 5 * scale);
-            data[y * width + x] = inner ? innerColor : outerColor;
+        var data = new Color[width * height];
+        float centerX = width * 0.5f;
+        float centerY = height * 0.5f;
+        float maxRadius = MathF.Sqrt(centerX * centerX + centerY * centerY);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (!IsInsideRoundedRect(x, y, width, height, 10 * scale))
+            { data[y * width + x] = Color.Transparent; continue; }
+            float dx = x - centerX;
+            float dy = y - centerY;
+            float radius = MathF.Sqrt(dx * dx + dy * dy) / maxRadius;
+            float glow = MathF.Max(0f, 1f - radius * 1.65f);
+            glow = glow * glow * 0.58f;
+            float grain = ((x * 17 + y * 31) % (7 * scale) == 0) ? 0.10f : 0f;
+            bool diagonalEtch = Math.Abs((x + y) % (22 * scale) - 11 * scale) <= scale;
+            Color baseTone = MixColors(outerColor, innerColor, 0.42f);
+            if (diagonalEtch) baseTone = MixColors(baseTone, Color.White, 0.16f);
+            baseTone = MixColors(baseTone, new Color(255, 225, 132), MathHelper.Clamp(glow + grain, 0f, 0.72f));
+            bool insetBorder = !IsInsideRoundedRect(x - 7 * scale, y - 7 * scale,
+                width - 14 * scale, height - 14 * scale, 5 * scale);
+            if (insetBorder) baseTone = MixColors(baseTone, new Color(255, 226, 143), 0.62f);
+            data[y * width + x] = baseTone;
         }
-
         tex.SetData(data);
         return tex;
     }
@@ -372,23 +468,20 @@ public partial class Game1
     {
         ThemePalette palette = GetThemePalette();
 
-        Color primaryBase = MixColors(palette.CardBack, palette.Table, 0.18f);
-        Color primaryInner = MixColors(primaryBase, palette.PanelAccent, 0.38f);
-        Color alternateBase = MixColors(palette.Button, palette.CardBack, 0.35f);
-        Color alternateInner = MixColors(palette.Panel, palette.Accent, 0.28f);
         Color patternBase = MixColors(palette.Table, palette.Panel, 0.42f);
         Color patternInner = MixColors(palette.PanelAccent, palette.CardBack, 0.30f);
 
-        ReplaceTexture(ref _cardBack1, CreateCardBack(primaryBase, primaryInner, 0));
-        ReplaceTexture(ref _cardBack2, CreateCardBack(alternateBase, alternateInner, 0));
+        ReplaceTexture(ref _cardBack1, CreateClassicCardBack());
+        Color burgundy = MixColors(new Color(91, 30, 51), palette.CardBack, 0.12f);
+        ReplaceTexture(ref _cardBack2, CreateBurgundyCardBack(burgundy, MixColors(palette.Accent, new Color(211, 151, 158), 0.34f)));
         ReplaceTexture(ref _cardBack3, CreateCardBack(patternBase, patternInner, 1));
 
         // Achievement backs retain their identity (minimal, space, gold), while
         // their colors are gently adapted to the currently selected table theme.
         ReplaceTexture(ref _cardBackMinimalist,
             CreateMinimalistCardBack(
-                MixColors(palette.PanelAccent, palette.Table, 0.20f),
-                MixColors(palette.CardFace, palette.Table, 0.10f)));
+                MixColors(palette.Accent, palette.Panel, 0.42f),
+                MixColors(palette.Panel, palette.Table, 0.24f)));
         ReplaceTexture(ref _cardBackSpace,
             CreateSpaceCardBack(
                 MixColors(palette.CardBack, Color.Black, 0.42f),
@@ -407,16 +500,27 @@ public partial class Game1
         _selectorCardBack.OptionKeys.Add("Pattern");
         if (SaveManager.Settings.AchFirstWin) _selectorCardBack.OptionKeys.Add("Minimalism");
         if (SaveManager.Settings.AchNoUndo) _selectorCardBack.OptionKeys.Add("Space");
-        if (SaveManager.Settings.AchHardMode || SaveManager.Settings.Ach4Suits) _selectorCardBack.OptionKeys.Add("Golden");
+        if (SaveManager.Settings.AchHardMode) _selectorCardBack.OptionKeys.Add("Golden");
 
         int realId = SaveManager.Settings.CardBack;
         int idx = GetSelectorIndexFromCardBackId(realId);
-        if (idx == -1) { // Card back is locked, reset to 0
+        if (idx == -1)
+        {
+            // The saved card back is invalid or is no longer unlocked.
+            // Fall back to the classic design and persist the correction.
             _currentCardBack = 0;
             SaveManager.Settings.CardBack = 0;
             SaveManager.SaveSettings();
             idx = 0;
         }
+        else
+        {
+            // Restore the actual card-back ID as well as the selector position.
+            // The selector index is achievement-dependent and is not the same
+            // as the stable card-back ID for unlocked designs.
+            _currentCardBack = realId;
+        }
+
         _selectorCardBack.SelectedIndex = idx;
     }
 
@@ -426,7 +530,7 @@ public partial class Game1
         int result = 3;
         if (SaveManager.Settings.AchFirstWin) { if (idx == result) return 3; result++; }
         if (SaveManager.Settings.AchNoUndo) { if (idx == result) return 4; result++; }
-        if (SaveManager.Settings.AchHardMode || SaveManager.Settings.Ach4Suits) { if (idx == result) return 5; result++; }
+        if (SaveManager.Settings.AchHardMode) { if (idx == result) return 5; result++; }
         return 0;
     }
 
@@ -436,7 +540,7 @@ public partial class Game1
         int result = 3;
         if (SaveManager.Settings.AchFirstWin) { if (id == 3) return result; result++; }
         if (SaveManager.Settings.AchNoUndo) { if (id == 4) return result; result++; }
-        if (SaveManager.Settings.AchHardMode || SaveManager.Settings.Ach4Suits) { if (id == 5) return result; result++; }
+        if (SaveManager.Settings.AchHardMode) { if (id == 5) return result; result++; }
         return -1;
     }
 
